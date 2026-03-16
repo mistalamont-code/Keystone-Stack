@@ -3043,43 +3043,42 @@ const checkIncentiveZones = (lat, lng, tract, state) => {
   return zones;
 };
 
-// Geocode using Census Bureau Geocoder (free, no API key) — structured address fields
+// Geocode using Nominatim (OpenStreetMap) — CORS-friendly, no API key needed
+// Then get census tract via FCC Census Block API (also CORS-friendly)
 const geocodeAddress = async (street, city, stateInput, zip) => {
-  // Try structured endpoint first (more reliable with separate fields)
-  const params = new URLSearchParams({
-    street: street,
-    city: city,
-    state: stateInput,
-    zip: zip || '',
-    benchmark: 'Public_AR_Current',
-    vintage: 'Current_Current',
-    format: 'json'
-  });
-  let url = 'https://geocoding.geo.census.gov/geocoder/geographies/address?' + params.toString();
-  let resp, data;
+  // Step 1: Geocode address to lat/lng via Nominatim
+  const fullAddr = street + ', ' + city + ', ' + stateInput + (zip ? ' ' + zip : '') + ', USA';
+  const nomUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(fullAddr);
+  let nomResp, nomData;
   try {
-    resp = await fetch(url);
-    data = await resp.json();
+    nomResp = await fetch(nomUrl, {headers:{'Accept':'application/json'}});
+    nomData = await nomResp.json();
   } catch (fetchErr) {
-    // Fallback: try the one-line endpoint
-    const fullAddr = street + ', ' + city + ', ' + stateInput + (zip ? ' ' + zip : '');
-    url = 'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress?address=' +
-      encodeURIComponent(fullAddr) + '&benchmark=Public_AR_Current&vintage=Current_Current&format=json';
-    resp = await fetch(url);
-    data = await resp.json();
+    throw new Error('Could not reach the geocoding service. Check your internet connection and try again.');
   }
-  if (!data.result || !data.result.addressMatches || data.result.addressMatches.length === 0) {
+  if (!nomData || nomData.length === 0) {
     throw new Error('Address not found. Double-check the street address, city, and state. Include the street number (e.g. "417 State St").');
   }
-  const match = data.result.addressMatches[0];
-  const coords = match.coordinates;
-  const geo = match.geographies;
+  const lat = parseFloat(nomData[0].lat);
+  const lng = parseFloat(nomData[0].lon);
+  const matchedAddress = nomData[0].display_name || fullAddr;
+
+  // Step 2: Get census tract from coordinates via FCC Census Block API
   let tract = '';
-  if (geo && geo['Census Tracts'] && geo['Census Tracts'].length > 0) {
-    tract = geo['Census Tracts'][0].GEOID || '';
+  try {
+    const fccUrl = 'https://geo.fcc.gov/api/census/block/find?latitude=' + lat + '&longitude=' + lng + '&showall=true&format=json';
+    const fccResp = await fetch(fccUrl);
+    const fccData = await fccResp.json();
+    if (fccData && fccData.Block && fccData.Block.FIPS) {
+      // FIPS is 15 digits: state(2) + county(3) + tract(6) + block(4). Tract GEOID = first 11.
+      tract = fccData.Block.FIPS.substring(0, 11);
+    }
+  } catch (fccErr) {
+    // Census tract lookup failed — continue without it (zones will rely on coordinates only)
+    console.warn('FCC Census Block lookup failed:', fccErr);
   }
-  const stateAbbr = match.addressComponents && match.addressComponents.state ? match.addressComponents.state : stateInput;
-  return { lat: coords.y, lng: coords.x, tract, stateAbbr, matchedAddress: match.matchedAddress };
+
+  return { lat, lng, tract, stateAbbr: stateInput.toUpperCase(), matchedAddress };
 };
 
 function ZoneMapPage({setPage}) {
