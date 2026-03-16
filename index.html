@@ -3043,30 +3043,50 @@ const checkIncentiveZones = (lat, lng, tract, state) => {
   return zones;
 };
 
-// Geocode using Census Bureau Geocoder (free, no API key)
-const geocodeAddress = async (address) => {
-  const url = 'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress?address=' +
-    encodeURIComponent(address) + '&benchmark=Public_AR_Current&vintage=Current_Current&format=json';
-  const resp = await fetch(url);
-  const data = await resp.json();
+// Geocode using Census Bureau Geocoder (free, no API key) — structured address fields
+const geocodeAddress = async (street, city, stateInput, zip) => {
+  // Try structured endpoint first (more reliable with separate fields)
+  const params = new URLSearchParams({
+    street: street,
+    city: city,
+    state: stateInput,
+    zip: zip || '',
+    benchmark: 'Public_AR_Current',
+    vintage: 'Current_Current',
+    format: 'json'
+  });
+  let url = 'https://geocoding.geo.census.gov/geocoder/geographies/address?' + params.toString();
+  let resp, data;
+  try {
+    resp = await fetch(url);
+    data = await resp.json();
+  } catch (fetchErr) {
+    // Fallback: try the one-line endpoint
+    const fullAddr = street + ', ' + city + ', ' + stateInput + (zip ? ' ' + zip : '');
+    url = 'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress?address=' +
+      encodeURIComponent(fullAddr) + '&benchmark=Public_AR_Current&vintage=Current_Current&format=json';
+    resp = await fetch(url);
+    data = await resp.json();
+  }
   if (!data.result || !data.result.addressMatches || data.result.addressMatches.length === 0) {
-    throw new Error('Address not found. Try including the full street address, city, and state.');
+    throw new Error('Address not found. Double-check the street address, city, and state. Include the street number (e.g. "417 State St").');
   }
   const match = data.result.addressMatches[0];
   const coords = match.coordinates;
   const geo = match.geographies;
   let tract = '';
-  let state = '';
   if (geo && geo['Census Tracts'] && geo['Census Tracts'].length > 0) {
     tract = geo['Census Tracts'][0].GEOID || '';
-    state = geo['Census Tracts'][0].STATE || '';
   }
-  const stateAbbr = match.addressComponents && match.addressComponents.state ? match.addressComponents.state : '';
+  const stateAbbr = match.addressComponents && match.addressComponents.state ? match.addressComponents.state : stateInput;
   return { lat: coords.y, lng: coords.x, tract, stateAbbr, matchedAddress: match.matchedAddress };
 };
 
 function ZoneMapPage({setPage}) {
-  const [address, setAddress] = useState('');
+  const [street, setStreet] = useState('');
+  const [city, setCity] = useState('Erie');
+  const [addrState, setAddrState] = useState('PA');
+  const [zip, setZip] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -3075,10 +3095,10 @@ function ZoneMapPage({setPage}) {
   const markerRef = useRef(null);
 
   const handleCheck = async () => {
-    if (!address.trim()) return;
+    if (!street.trim() || !city.trim() || !addrState.trim()) { setError('Please fill in at least the street address, city, and state.'); return; }
     setLoading(true); setError(''); setResult(null);
     try {
-      const geo = await geocodeAddress(address);
+      const geo = await geocodeAddress(street, city, addrState, zip);
       const zones = checkIncentiveZones(geo.lat, geo.lng, geo.tract, geo.stateAbbr);
       setResult({...geo, zones});
 
@@ -3124,16 +3144,30 @@ function ZoneMapPage({setPage}) {
         <p className="page-desc">Check if a property address qualifies for Opportunity Zones, CRIZ, Historic Tax Credits, and other incentive programs.</p>
       </div>
       <div className="card" style={{maxWidth:800,margin:'0 auto'}}>
-        <p className="zone-page-intro">Enter a full street address below. We'll geocode it using the U.S. Census Bureau, identify the census tract, and check it against known incentive zone boundaries.</p>
-        <div className="zone-check-bar">
-          <div className="input-group">
-            <label className="input-label">Property Address</label>
-            <input className="input input-sm" type="text" placeholder="e.g. 417 State St, Erie, PA 16501" value={address} onChange={e=>setAddress(e.target.value)} onKeyDown={handleKeyDown}/>
+        <p className="zone-page-intro">Enter the property address below. We'll look it up through the U.S. Census Bureau, identify the census tract, and check it against known incentive zone boundaries.</p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:'0.5rem',marginBottom:'0.75rem'}}>
+          <div className="input-group" style={{margin:0}}>
+            <label className="input-label">Street Address</label>
+            <input className="input input-sm" type="text" placeholder="e.g. 417 State St" value={street} onChange={e=>setStreet(e.target.value)} onKeyDown={handleKeyDown}/>
           </div>
-          <button className="btn-gold" onClick={handleCheck} disabled={loading}>
-            {loading ? 'Checking...' : 'Check Zones'}
-          </button>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:'0.5rem'}}>
+            <div className="input-group" style={{margin:0}}>
+              <label className="input-label">City</label>
+              <input className="input input-sm" type="text" placeholder="Erie" value={city} onChange={e=>setCity(e.target.value)} onKeyDown={handleKeyDown}/>
+            </div>
+            <div className="input-group" style={{margin:0}}>
+              <label className="input-label">State</label>
+              <input className="input input-sm" type="text" placeholder="PA" value={addrState} onChange={e=>setAddrState(e.target.value)} maxLength={2} style={{textTransform:'uppercase'}} onKeyDown={handleKeyDown}/>
+            </div>
+            <div className="input-group" style={{margin:0}}>
+              <label className="input-label">Zip Code</label>
+              <input className="input input-sm" type="text" placeholder="16501" value={zip} onChange={e=>setZip(e.target.value)} maxLength={5} onKeyDown={handleKeyDown}/>
+            </div>
+          </div>
         </div>
+        <button className="btn-gold" onClick={handleCheck} disabled={loading} style={{width:'100%',marginBottom:'1rem'}}>
+          {loading ? 'Checking...' : 'Check Zones'}
+        </button>
 
         {error && <div className="zone-error">{error}</div>}
 
