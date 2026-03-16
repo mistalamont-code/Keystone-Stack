@@ -199,7 +199,7 @@ select.input { appearance: auto; }
 
 /* Pathway cards */
 .pathway-section { padding: 0 2rem 80px; max-width: 1200px; margin: -40px auto 0; position: relative; z-index: 2; }
-.pathway-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.25rem; }
+.pathway-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.25rem; }
 .pathway-card {
   background: var(--purple-card); border: 1px solid rgba(201,168,76,0.12); border-radius: 12px;
   padding: 2.5rem 2rem; text-align: center; transition: all 0.3s; cursor: pointer; position: relative; overflow: hidden;
@@ -1022,7 +1022,6 @@ function Nav({page, setPage}) {
   const [open, setOpen] = useState(false);
   const navItems = [
     {id:'deal-screener',label:'Deal Screener'},
-    {id:'zone-map',label:'Incentive Map'},
     {id:'simulators',label:'Simulators'},
     {id:'deal-memo',label:'Deal Memo'},
     {id:'incentives',label:'Incentives'},
@@ -1127,17 +1126,11 @@ function HomePage({setPage}) {
             <p>7 deal simulators — pro formas, capital stacks, sources & uses, and scenario comparison with PDF exports.</p>
             <div className="pathway-meta">Explore Simulators <Icon type="arrow" size={12}/></div>
           </div>
-          <div className="pathway-card" onClick={() => setPage('zone-map')}>
-            <div className="pathway-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
-            <h3>Incentive Map</h3>
-            <p>Enter an address and instantly see if it falls in an Opportunity Zone, CRIZ, or other incentive areas.</p>
-            <div className="pathway-meta">Check Zones <Icon type="arrow" size={12}/></div>
-          </div>
           <div className="pathway-card" onClick={() => setPage('incentives')}>
-            <div className="pathway-icon"><Icon type="flag" size={28}/></div>
-            <h3>Find Incentives</h3>
-            <p>Screen 17 federal, state, and local programs — with checklists, Davis-Bacon flags, and eligibility matching.</p>
-            <div className="pathway-meta">Browse Programs <Icon type="arrow" size={12}/></div>
+            <div className="pathway-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+            <h3>Incentives</h3>
+            <p>Map an address to check incentive zones, then browse 17 federal, state, and local programs with eligibility matching.</p>
+            <div className="pathway-meta">Explore Incentives <Icon type="arrow" size={12}/></div>
           </div>
         </div>
       </div>
@@ -2177,6 +2170,47 @@ function IncentivesPage({setPage}) {
   const [projectSize, setProjectSize] = useState('any');
   const [location, setLocation] = useState('any');
   const [expandedChecklists, setExpandedChecklists] = useState({});
+
+  // ── Incentive Map state ──
+  const [street, setStreet] = useState('');
+  const [city, setCity] = useState('Erie');
+  const [addrState, setAddrState] = useState('PA');
+  const [zip, setZip] = useState('');
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const [mapResult, setMapResult] = useState(null);
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const markerRef = useRef(null);
+
+  const handleCheck = async () => {
+    if (!street.trim() || !city.trim() || !addrState.trim()) { setMapError('Please fill in at least the street address, city, and state.'); return; }
+    setMapLoading(true); setMapError(''); setMapResult(null);
+    try {
+      const geo = await geocodeAddress(street, city, addrState, zip);
+      const zones = checkIncentiveZones(geo.lat, geo.lng, geo.tract, geo.stateAbbr);
+      setMapResult({...geo, zones});
+      if (!mapInstance.current && mapRef.current) {
+        mapInstance.current = L.map(mapRef.current, {zoomControl:true, attributionControl:false}).setView([geo.lat, geo.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap'}).addTo(mapInstance.current);
+      } else if (mapInstance.current) {
+        mapInstance.current.setView([geo.lat, geo.lng], 15);
+      }
+      if (markerRef.current) markerRef.current.remove();
+      const qualCount = zones.filter(z=>z.qualified).length;
+      const pinColor = qualCount >= 3 ? '#16A34A' : qualCount >= 1 ? '#D4AF37' : '#EF4444';
+      const icon = L.divIcon({className:'',html:'<div style="width:28px;height:28px;border-radius:50%;background:'+pinColor+';border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>',iconSize:[28,28],iconAnchor:[14,28]});
+      markerRef.current = L.marker([geo.lat, geo.lng], {icon}).addTo(mapInstance.current);
+      markerRef.current.bindPopup('<strong>'+geo.matchedAddress+'</strong><br/>Tract: '+geo.tract+'<br/>Qualifying zones: '+qualCount).openPopup();
+      setTimeout(()=>{ if(mapInstance.current) mapInstance.current.invalidateSize(); }, 100);
+    } catch (e) {
+      setMapError(e.message || 'Geocoding failed. Please check the address and try again.');
+    }
+    setMapLoading(false);
+  };
+  const handleKeyDown = (e) => { if (e.key === 'Enter') handleCheck(); };
+  useEffect(() => { return () => { if(mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } }; }, []);
+  const mapQualCount = mapResult ? mapResult.zones.filter(z=>z.qualified).length : 0;
   const toggleChecklist = (name) => setExpandedChecklists(prev => ({...prev, [name]: !prev[name]}));
   const types = ['all','Grant','Loan','Tax Abatement','Tax Credit','Equity'];
   const screenerActive = projectType !== 'any' || projectSize !== 'any' || location !== 'any';
@@ -2212,11 +2246,85 @@ function IncentivesPage({setPage}) {
         <div className="page-header-inner">
           <div className="back-link" onClick={() => setPage('home')}><Icon type="back" size={16}/> Home</div>
           <h1>Incentives &amp; Programs</h1>
-          <p>Find federal, state, and local programs for your project</p>
+          <p>Map your address, then browse federal, state, and local programs</p>
         </div>
       </div>
       <div className="content">
+
+        {/* ── Incentive Map Section ── */}
         <div style={{background:'var(--bg-card)',borderRadius:12,padding:'1.5rem',marginBottom:'1.5rem',border:'1px solid var(--border)'}}>
+          <h3 style={{margin:'0 0 0.25rem 0',fontSize:'1.1rem'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.5" style={{verticalAlign:'-3px',marginRight:6}}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Incentive Map
+          </h3>
+          <p style={{color:'var(--text-muted)',fontSize:'0.82rem',margin:'0 0 0.75rem 0'}}>Enter a property address to check Opportunity Zones, CRIZ, Historic Tax Credits, and more.</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr',gap:'0.5rem',marginBottom:'0.75rem'}}>
+            <div className="input-group" style={{margin:0}}>
+              <label className="input-label">Street Address</label>
+              <input className="input input-sm" type="text" placeholder="e.g. 417 State St" value={street} onChange={e=>setStreet(e.target.value)} onKeyDown={handleKeyDown}/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:'0.5rem'}}>
+              <div className="input-group" style={{margin:0}}>
+                <label className="input-label">City</label>
+                <input className="input input-sm" type="text" placeholder="Erie" value={city} onChange={e=>setCity(e.target.value)} onKeyDown={handleKeyDown}/>
+              </div>
+              <div className="input-group" style={{margin:0}}>
+                <label className="input-label">State</label>
+                <input className="input input-sm" type="text" placeholder="PA" value={addrState} onChange={e=>setAddrState(e.target.value)} maxLength={2} style={{textTransform:'uppercase'}} onKeyDown={handleKeyDown}/>
+              </div>
+              <div className="input-group" style={{margin:0}}>
+                <label className="input-label">Zip Code</label>
+                <input className="input input-sm" type="text" placeholder="16501" value={zip} onChange={e=>setZip(e.target.value)} maxLength={5} onKeyDown={handleKeyDown}/>
+              </div>
+            </div>
+          </div>
+          <button className="btn-gold" onClick={handleCheck} disabled={mapLoading} style={{width:'100%',marginBottom:mapResult||mapLoading||mapError?'1rem':'0'}}>
+            {mapLoading ? 'Checking...' : 'Check Zones'}
+          </button>
+          {mapError && <div className="zone-error">{mapError}</div>}
+          {(mapResult || mapLoading) && (
+            <div className="zone-map-wrap">
+              <div ref={mapRef} style={{height:'100%',width:'100%'}}/>
+              {mapLoading && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(15,6,32,0.7)',zIndex:1000}}>
+                <div className="zone-loading">Geocoding address...</div>
+              </div>}
+            </div>
+          )}
+          {mapResult && (
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
+                <h3 style={{margin:0,fontSize:'1rem'}}>Zone Results</h3>
+                <span style={{fontSize:'0.8rem',color:'var(--text-muted)'}}>Census Tract: {mapResult.tract}</span>
+              </div>
+              <div style={{fontSize:'0.82rem',color:'var(--gold)',marginBottom:'1rem',fontWeight:600}}>
+                {mapQualCount === 0 ? 'No qualifying incentive zones found at this address.' :
+                 mapQualCount + ' qualifying zone' + (mapQualCount>1?'s':'')+' identified'}
+              </div>
+              <div className="zone-results">
+                {mapResult.zones.filter(z=>z.qualified).map(z => (
+                  <div key={z.id} className="zone-badge yes">
+                    <span className="zone-badge-icon">✅</span>
+                    <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem',opacity:0.85}}>{z.desc}</span></div>
+                  </div>
+                ))}
+                {mapResult.zones.filter(z=>!z.qualified).map(z => (
+                  <div key={z.id} className="zone-badge no">
+                    <span className="zone-badge-icon">—</span>
+                    <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem'}}>{z.desc}</span></div>
+                  </div>
+                ))}
+              </div>
+              <div className="disclaimer" style={{marginTop:'1rem'}}>
+                <div className="disclaimer-icon"><Icon type="warn" size={16}/></div>
+                <div><p style={{margin:0,fontSize:'0.78rem'}}>Zone boundaries are approximate. Always verify eligibility with the relevant program administrator before relying on these results.</p></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Program Directory ── */}
+        <div style={{background:'var(--bg-card)',borderRadius:12,padding:'1.5rem',marginBottom:'1.5rem',border:'1px solid var(--border)'}}>
+          <h3 style={{margin:'0 0 1rem 0',fontSize:'1.1rem'}}>Program Directory</h3>
           <div className="screener-row" style={{marginBottom:'1rem'}}>
             <select className="input input-sm" value={projectType} onChange={e=>setProjectType(e.target.value)} aria-label="Project type">
               <option value="any">Any Project Type</option>
@@ -2251,40 +2359,40 @@ function IncentivesPage({setPage}) {
             </select>
             {screenerActive && <button className="btn-preset" onClick={()=>{setProjectType('any');setProjectSize('any');setLocation('any');}}>Clear</button>}
           </div>
-        </div>
-        <p style={{color:'var(--text-muted)',fontSize:'0.82rem',marginBottom:'1rem'}}>{filtered.length} programs{screenerActive ? ' — matching programs highlighted' : ''}</p>
-        <div className="incentive-grid">
-          {filtered.map((p,i) => {
-            const match = getMatch(p);
-            return (
-              <div key={i} className={`incentive-card${screenerActive && match > 0 ? ' highlighted' : ''}${screenerActive && match === 0 ? ' dimmed' : ''}`}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem',marginBottom:'0.35rem'}}>
-                  <h3>{p.name}{match > 0 && <span className="match-badge">Match</span>}</h3>
-                  <span className={`badge badge-${p.level}`}>{p.level}</span>
-                </div>
-                <div className="location"><Icon type="pin" size={14}/> {p.location}</div>
-                <p className="desc">{p.desc}</p>
-                <div className="incentive-tags">
-                  {p.tags.map((t,j) => <span key={j} className="incentive-tag">{t}</span>)}
-                </div>
-                {p.prevailingWage && <div className="pw-badge"><Icon type="warn" size={12}/> Davis-Bacon / Prevailing Wage Required</div>}
-                <div style={{display:'flex',gap:'0.75rem',alignItems:'center',marginTop:'0.5rem'}}>
-                  {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" className="official-link">Official Source <Icon type="link" size={12}/></a>}
-                  {p.checklist && <button className="checklist-toggle" onClick={(e) => {e.stopPropagation(); toggleChecklist(p.name);}}>{expandedChecklists[p.name] ? 'Hide' : 'Show'} Checklist ({p.checklist.length})</button>}
-                </div>
-                {p.checklist && expandedChecklists[p.name] && (
-                  <div className="checklist-panel">
-                    {p.checklist.map((item, ci) => (
-                      <div key={ci} className="checklist-item">
-                        <div className="check-box"></div>
-                        <span>{item}</span>
-                      </div>
-                    ))}
+          <p style={{color:'var(--text-muted)',fontSize:'0.82rem',marginBottom:'1rem',marginTop:'1rem'}}>{filtered.length} programs{screenerActive ? ' — matching programs highlighted' : ''}</p>
+          <div className="incentive-grid">
+            {filtered.map((p,i) => {
+              const match = getMatch(p);
+              return (
+                <div key={i} className={`incentive-card${screenerActive && match > 0 ? ' highlighted' : ''}${screenerActive && match === 0 ? ' dimmed' : ''}`}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem',marginBottom:'0.35rem'}}>
+                    <h3>{p.name}{match > 0 && <span className="match-badge">Match</span>}</h3>
+                    <span className={`badge badge-${p.level}`}>{p.level}</span>
                   </div>
-                )}
-              </div>
-            );
-          })}
+                  <div className="location"><Icon type="pin" size={14}/> {p.location}</div>
+                  <p className="desc">{p.desc}</p>
+                  <div className="incentive-tags">
+                    {p.tags.map((t,j) => <span key={j} className="incentive-tag">{t}</span>)}
+                  </div>
+                  {p.prevailingWage && <div className="pw-badge"><Icon type="warn" size={12}/> Davis-Bacon / Prevailing Wage Required</div>}
+                  <div style={{display:'flex',gap:'0.75rem',alignItems:'center',marginTop:'0.5rem'}}>
+                    {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" className="official-link">Official Source <Icon type="link" size={12}/></a>}
+                    {p.checklist && <button className="checklist-toggle" onClick={(e) => {e.stopPropagation(); toggleChecklist(p.name);}}>{expandedChecklists[p.name] ? 'Hide' : 'Show'} Checklist ({p.checklist.length})</button>}
+                  </div>
+                  {p.checklist && expandedChecklists[p.name] && (
+                    <div className="checklist-panel">
+                      {p.checklist.map((item, ci) => (
+                        <div key={ci} className="checklist-item">
+                          <div className="check-box"></div>
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
         <div className="disclaimer" style={{marginTop:'1.5rem'}}>
           <div className="disclaimer-icon"><Icon type="warn" size={18}/></div>
@@ -3081,145 +3189,7 @@ const geocodeAddress = async (street, city, stateInput, zip) => {
   return { lat, lng, tract, stateAbbr: stateInput.toUpperCase(), matchedAddress };
 };
 
-function ZoneMapPage({setPage}) {
-  const [street, setStreet] = useState('');
-  const [city, setCity] = useState('Erie');
-  const [addrState, setAddrState] = useState('PA');
-  const [zip, setZip] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
-  const mapRef = useRef(null);
-  const mapInstance = useRef(null);
-  const markerRef = useRef(null);
 
-  const handleCheck = async () => {
-    if (!street.trim() || !city.trim() || !addrState.trim()) { setError('Please fill in at least the street address, city, and state.'); return; }
-    setLoading(true); setError(''); setResult(null);
-    try {
-      const geo = await geocodeAddress(street, city, addrState, zip);
-      const zones = checkIncentiveZones(geo.lat, geo.lng, geo.tract, geo.stateAbbr);
-      setResult({...geo, zones});
-
-      // Initialize or update map
-      if (!mapInstance.current && mapRef.current) {
-        mapInstance.current = L.map(mapRef.current, {zoomControl:true, attributionControl:false}).setView([geo.lat, geo.lng], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap'
-        }).addTo(mapInstance.current);
-      } else if (mapInstance.current) {
-        mapInstance.current.setView([geo.lat, geo.lng], 15);
-      }
-      // Marker
-      if (markerRef.current) markerRef.current.remove();
-      const qualCount = zones.filter(z=>z.qualified).length;
-      const pinColor = qualCount >= 3 ? '#16A34A' : qualCount >= 1 ? '#D4AF37' : '#EF4444';
-      const icon = L.divIcon({
-        className:'',
-        html:'<div style="width:28px;height:28px;border-radius:50%;background:'+pinColor+';border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>',
-        iconSize:[28,28], iconAnchor:[14,28]
-      });
-      markerRef.current = L.marker([geo.lat, geo.lng], {icon}).addTo(mapInstance.current);
-      markerRef.current.bindPopup('<strong>'+geo.matchedAddress+'</strong><br/>Tract: '+geo.tract+'<br/>Qualifying zones: '+qualCount).openPopup();
-      // Force Leaflet to recalc size
-      setTimeout(()=>{ if(mapInstance.current) mapInstance.current.invalidateSize(); }, 100);
-    } catch (e) {
-      setError(e.message || 'Geocoding failed. Please check the address and try again.');
-    }
-    setLoading(false);
-  };
-
-  const handleKeyDown = (e) => { if (e.key === 'Enter') handleCheck(); };
-
-  // Cleanup map on unmount
-  useEffect(() => { return () => { if(mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } }; }, []);
-
-  const qualCount = result ? result.zones.filter(z=>z.qualified).length : 0;
-
-  return (
-    <div>
-      <div className="page-header">
-        <h2>Incentive Map</h2>
-        <p className="page-desc">Check if a property address qualifies for Opportunity Zones, CRIZ, Historic Tax Credits, and other incentive programs.</p>
-      </div>
-      <div className="card" style={{maxWidth:800,margin:'0 auto'}}>
-        <p className="zone-page-intro">Enter the property address below. We'll look it up through the U.S. Census Bureau, identify the census tract, and check it against known incentive zone boundaries.</p>
-        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:'0.5rem',marginBottom:'0.75rem'}}>
-          <div className="input-group" style={{margin:0}}>
-            <label className="input-label">Street Address</label>
-            <input className="input input-sm" type="text" placeholder="e.g. 417 State St" value={street} onChange={e=>setStreet(e.target.value)} onKeyDown={handleKeyDown}/>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:'0.5rem'}}>
-            <div className="input-group" style={{margin:0}}>
-              <label className="input-label">City</label>
-              <input className="input input-sm" type="text" placeholder="Erie" value={city} onChange={e=>setCity(e.target.value)} onKeyDown={handleKeyDown}/>
-            </div>
-            <div className="input-group" style={{margin:0}}>
-              <label className="input-label">State</label>
-              <input className="input input-sm" type="text" placeholder="PA" value={addrState} onChange={e=>setAddrState(e.target.value)} maxLength={2} style={{textTransform:'uppercase'}} onKeyDown={handleKeyDown}/>
-            </div>
-            <div className="input-group" style={{margin:0}}>
-              <label className="input-label">Zip Code</label>
-              <input className="input input-sm" type="text" placeholder="16501" value={zip} onChange={e=>setZip(e.target.value)} maxLength={5} onKeyDown={handleKeyDown}/>
-            </div>
-          </div>
-        </div>
-        <button className="btn-gold" onClick={handleCheck} disabled={loading} style={{width:'100%',marginBottom:'1rem'}}>
-          {loading ? 'Checking...' : 'Check Zones'}
-        </button>
-
-        {error && <div className="zone-error">{error}</div>}
-
-        {(result || loading) && (
-          <div className="zone-map-wrap">
-            <div ref={mapRef} style={{height:'100%',width:'100%'}}/>
-            {loading && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(15,6,32,0.7)',zIndex:1000}}>
-              <div className="zone-loading">Geocoding address...</div>
-            </div>}
-          </div>
-        )}
-
-        {result && (
-          <div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
-              <h3 style={{margin:0}}>Incentive Zone Results</h3>
-              <span style={{fontSize:'0.8rem',color:'var(--text-muted)'}}>Census Tract: {result.tract}</span>
-            </div>
-            <div style={{fontSize:'0.82rem',color:'var(--gold)',marginBottom:'1rem',fontWeight:600}}>
-              {qualCount === 0 ? 'No qualifying incentive zones found at this address.' :
-               qualCount + ' qualifying zone' + (qualCount>1?'s':'')+' identified'}
-            </div>
-            <div className="zone-results">
-              {result.zones.filter(z=>z.qualified).map(z => (
-                <div key={z.id} className="zone-badge yes">
-                  <span className="zone-badge-icon">✅</span>
-                  <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem',opacity:0.85}}>{z.desc}</span></div>
-                </div>
-              ))}
-              {result.zones.filter(z=>!z.qualified).map(z => (
-                <div key={z.id} className="zone-badge no">
-                  <span className="zone-badge-icon">—</span>
-                  <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem'}}>{z.desc}</span></div>
-                </div>
-              ))}
-            </div>
-            <div className="disclaimer" style={{marginTop:'1.5rem'}}>
-              <div className="disclaimer-icon"><Icon type="warn" size={18}/></div>
-              <div>
-                <h4>Verify Zone Boundaries</h4>
-                <p>Zone boundaries shown are approximate and based on publicly available data. Always verify eligibility with the relevant program administrator, the CDFI Fund's mapping tool (for NMTC/OZ), or your local municipality before relying on these results for investment decisions.</p>
-              </div>
-            </div>
-            <div style={{textAlign:'center',marginTop:'1.5rem'}}>
-              <button className="btn-outline btn-sm" onClick={()=>setPage('deal-screener')}>Screen This Deal →</button>
-              <button className="btn-outline btn-sm" style={{marginLeft:'0.75rem'}} onClick={()=>setPage('incentives')}>View All Incentives →</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── DEAL SCREENER ───────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
@@ -3770,7 +3740,6 @@ function App() {
   const renderPage = () => {
     if (page === 'home') return <HomePage setPage={setPage}/>;
     if (page === 'deal-screener') return <DealScreenerPage setPage={setPage}/>;
-    if (page === 'zone-map') return <ZoneMapPage setPage={setPage}/>;
     if (page === 'simulators') return <SimulatorLibraryPage setPage={setPage}/>;
     if (page === 'deal-memo') return <DealMemoPage setPage={setPage}/>;
     if (page === 'glossary') return <GlossaryPage setPage={setPage}/>;
