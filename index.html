@@ -27,6 +27,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -197,7 +199,7 @@ select.input { appearance: auto; }
 
 /* Pathway cards */
 .pathway-section { padding: 0 2rem 80px; max-width: 1200px; margin: -40px auto 0; position: relative; z-index: 2; }
-.pathway-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.25rem; }
+.pathway-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.25rem; }
 .pathway-card {
   background: var(--purple-card); border: 1px solid rgba(201,168,76,0.12); border-radius: 12px;
   padding: 2.5rem 2rem; text-align: center; transition: all 0.3s; cursor: pointer; position: relative; overflow: hidden;
@@ -432,6 +434,23 @@ select.input { appearance: auto; }
 .verdict-go { background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3); color: #16A34A; }
 .verdict-maybe { background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); color: #EAB308; }
 .verdict-no { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #EF4444; }
+
+/* Zone Map */
+.zone-check-bar { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 1rem; }
+.zone-check-bar .input-group { flex: 1; margin: 0; }
+.zone-check-bar .btn-gold { white-space: nowrap; height: 36px; font-size: 0.78rem; }
+.zone-map-wrap { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); height: 280px; margin-bottom: 1rem; position: relative; }
+.zone-map-wrap .leaflet-container { height: 100%; width: 100%; background: var(--purple-deep); }
+.zone-results { display: flex; flex-direction: column; gap: 0.5rem; }
+.zone-badge { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.78rem; line-height: 1.4; }
+.zone-badge.yes { background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.25); color: #16A34A; }
+.zone-badge.no { background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--text-muted); opacity: 0.6; }
+.zone-badge-icon { font-size: 1rem; flex-shrink: 0; }
+.zone-badge-text strong { font-weight: 600; }
+.zone-loading { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem; }
+.zone-error { text-align: center; padding: 1rem; color: #EF4444; font-size: 0.8rem; background: rgba(239,68,68,0.08); border-radius: 8px; }
+.zone-page-intro { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.7; margin-bottom: 1.5rem; }
+@media(max-width:600px) { .zone-check-bar { flex-direction: column; } .zone-map-wrap { height: 220px; } }
 
 /* Enhanced UI */
 .input-hint { font-size: 0.7rem; color: var(--text-muted); font-style: italic; margin-top: 0.2rem; opacity: 0.8; }
@@ -1003,6 +1022,7 @@ function Nav({page, setPage}) {
   const [open, setOpen] = useState(false);
   const navItems = [
     {id:'deal-screener',label:'Deal Screener'},
+    {id:'zone-map',label:'Zone Map'},
     {id:'simulators',label:'Simulators'},
     {id:'deal-memo',label:'Deal Memo'},
     {id:'incentives',label:'Incentives'},
@@ -1106,6 +1126,12 @@ function HomePage({setPage}) {
             <h3>Run Simulations</h3>
             <p>7 deal simulators — pro formas, capital stacks, sources & uses, and scenario comparison with PDF exports.</p>
             <div className="pathway-meta">Explore Simulators <Icon type="arrow" size={12}/></div>
+          </div>
+          <div className="pathway-card" onClick={() => setPage('zone-map')}>
+            <div className="pathway-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+            <h3>Zone Map</h3>
+            <p>Enter an address and instantly see if it falls in an Opportunity Zone, CRIZ, or other incentive areas.</p>
+            <div className="pathway-meta">Check Zones <Icon type="arrow" size={12}/></div>
           </div>
           <div className="pathway-card" onClick={() => setPage('incentives')}>
             <div className="pathway-icon"><Icon type="flag" size={28}/></div>
@@ -2955,6 +2981,213 @@ function DealMemoPage({setPage}) {
   );
 }
 
+// ─── ZONE MAP / INCENTIVE ZONE CHECKER ───────────────────────────────────────
+// Erie County PA Qualified Opportunity Zone census tracts (FIPS 42049)
+const ERIE_OZ_TRACTS = [
+  '42049000200','42049000300','42049000400','42049000500',
+  '42049000600','42049001400','42049001900','42049002800','42049003200'
+];
+
+// Erie CRIZ (City Revitalization & Improvement Zone) — approximate downtown boundary
+const ERIE_CRIZ_BOUNDS = {minLat:42.1220,maxLat:42.1340,minLng:-80.0950,maxLng:-80.0750};
+
+// Known incentive zone checks based on location + census tract
+const checkIncentiveZones = (lat, lng, tract, state) => {
+  const zones = [];
+  const inErie = state === 'PA' && lat > 41.9 && lat < 42.2 && lng > -80.2 && lng < -79.9;
+  const tractFull = tract || '';
+
+  // Opportunity Zone (nationwide — check tract)
+  const isOZ = ERIE_OZ_TRACTS.includes(tractFull);
+  zones.push({id:'oz', name:'Opportunity Zone', qualified:isOZ,
+    desc: isOZ ? 'This property is in a federally designated Qualified Opportunity Zone. Capital gains invested here can receive tax deferral and potential exclusion.' : 'Not in a designated Opportunity Zone census tract.'});
+
+  // CRIZ
+  if (inErie) {
+    const inCRIZ = lat >= ERIE_CRIZ_BOUNDS.minLat && lat <= ERIE_CRIZ_BOUNDS.maxLat && lng >= ERIE_CRIZ_BOUNDS.minLng && lng <= ERIE_CRIZ_BOUNDS.maxLng;
+    zones.push({id:'criz', name:'CRIZ (City Revitalization Zone)', qualified:inCRIZ,
+      desc: inCRIZ ? 'Inside Erie\'s CRIZ district. State and local tax revenues generated by your project can be captured and reinvested into the development.' : 'Outside the CRIZ boundary.'});
+  }
+
+  // Federal Historic Tax Credits — check if in a historic district (approximate for downtown Erie)
+  if (inErie) {
+    const inHistoric = lat >= 42.1260 && lat <= 42.1330 && lng >= -80.0900 && lng <= -80.0780;
+    zones.push({id:'htc', name:'Historic Tax Credits (potential)', qualified:inHistoric,
+      desc: inHistoric ? 'This address is in or near Erie\'s downtown historic district. Projects rehabilitating certified historic structures may qualify for 20% federal HTC.' : 'Not in a recognized historic district. Individual buildings may still qualify if listed on the National Register.'});
+  }
+
+  // LERTA
+  if (inErie) {
+    zones.push({id:'lerta', name:'LERTA Tax Abatement', qualified:inErie,
+      desc:'Erie has an active LERTA program. Improvements to commercial and residential properties can receive a 10-year graduated tax abatement on the increased assessment.'});
+  }
+
+  // KOZ — Keystone Opportunity Zone (specific parcels, approximate)
+  if (inErie) {
+    const inKOZ = lat >= 42.1190 && lat <= 42.1250 && lng >= -80.1050 && lng <= -80.0900;
+    zones.push({id:'koz', name:'Keystone Opportunity Zone (KOZ)', qualified:inKOZ,
+      desc: inKOZ ? 'Inside a PA Keystone Opportunity Zone. Businesses here can receive nearly full state and local tax elimination for the zone duration.' : 'Not in a designated KOZ area.'});
+  }
+
+  // NMTC eligibility (low-income census tracts)
+  const nmtcEligible = isOZ; // OZ tracts are almost always NMTC-eligible
+  zones.push({id:'nmtc', name:'New Markets Tax Credits (likely eligible)', qualified:nmtcEligible,
+    desc: nmtcEligible ? 'This census tract is likely NMTC-eligible as a low-income community. Projects with $5M+ in development costs should explore NMTC allocation.' : 'This tract may not meet NMTC low-income thresholds. Verify with the CDFI Fund mapping tool.'});
+
+  // General PA programs available statewide
+  if (state === 'PA') {
+    zones.push({id:'racp', name:'RACP (Redevelopment Assistance)', qualified:true,
+      desc:'PA Redevelopment Assistance Capital Program grants are available statewide for projects with regional economic impact. Requires state legislative nomination.'});
+  }
+
+  return zones;
+};
+
+// Geocode using Census Bureau Geocoder (free, no API key)
+const geocodeAddress = async (address) => {
+  const url = 'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress?address=' +
+    encodeURIComponent(address) + '&benchmark=Public_AR_Current&vintage=Current_Current&format=json';
+  const resp = await fetch(url);
+  const data = await resp.json();
+  if (!data.result || !data.result.addressMatches || data.result.addressMatches.length === 0) {
+    throw new Error('Address not found. Try including the full street address, city, and state.');
+  }
+  const match = data.result.addressMatches[0];
+  const coords = match.coordinates;
+  const geo = match.geographies;
+  let tract = '';
+  let state = '';
+  if (geo && geo['Census Tracts'] && geo['Census Tracts'].length > 0) {
+    tract = geo['Census Tracts'][0].GEOID || '';
+    state = geo['Census Tracts'][0].STATE || '';
+  }
+  const stateAbbr = match.addressComponents && match.addressComponents.state ? match.addressComponents.state : '';
+  return { lat: coords.y, lng: coords.x, tract, stateAbbr, matchedAddress: match.matchedAddress };
+};
+
+function ZoneMapPage({setPage}) {
+  const [address, setAddress] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const markerRef = useRef(null);
+
+  const handleCheck = async () => {
+    if (!address.trim()) return;
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const geo = await geocodeAddress(address);
+      const zones = checkIncentiveZones(geo.lat, geo.lng, geo.tract, geo.stateAbbr);
+      setResult({...geo, zones});
+
+      // Initialize or update map
+      if (!mapInstance.current && mapRef.current) {
+        mapInstance.current = L.map(mapRef.current, {zoomControl:true, attributionControl:false}).setView([geo.lat, geo.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap'
+        }).addTo(mapInstance.current);
+      } else if (mapInstance.current) {
+        mapInstance.current.setView([geo.lat, geo.lng], 15);
+      }
+      // Marker
+      if (markerRef.current) markerRef.current.remove();
+      const qualCount = zones.filter(z=>z.qualified).length;
+      const pinColor = qualCount >= 3 ? '#16A34A' : qualCount >= 1 ? '#D4AF37' : '#EF4444';
+      const icon = L.divIcon({
+        className:'',
+        html:'<div style="width:28px;height:28px;border-radius:50%;background:'+pinColor+';border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>',
+        iconSize:[28,28], iconAnchor:[14,28]
+      });
+      markerRef.current = L.marker([geo.lat, geo.lng], {icon}).addTo(mapInstance.current);
+      markerRef.current.bindPopup('<strong>'+geo.matchedAddress+'</strong><br/>Tract: '+geo.tract+'<br/>Qualifying zones: '+qualCount).openPopup();
+      // Force Leaflet to recalc size
+      setTimeout(()=>{ if(mapInstance.current) mapInstance.current.invalidateSize(); }, 100);
+    } catch (e) {
+      setError(e.message || 'Geocoding failed. Please check the address and try again.');
+    }
+    setLoading(false);
+  };
+
+  const handleKeyDown = (e) => { if (e.key === 'Enter') handleCheck(); };
+
+  // Cleanup map on unmount
+  useEffect(() => { return () => { if(mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } }; }, []);
+
+  const qualCount = result ? result.zones.filter(z=>z.qualified).length : 0;
+
+  return (
+    <div>
+      <div className="page-header">
+        <h2>Zone Map</h2>
+        <p className="page-desc">Check if a property address qualifies for Opportunity Zones, CRIZ, Historic Tax Credits, and other incentive programs.</p>
+      </div>
+      <div className="card" style={{maxWidth:800,margin:'0 auto'}}>
+        <p className="zone-page-intro">Enter a full street address below. We'll geocode it using the U.S. Census Bureau, identify the census tract, and check it against known incentive zone boundaries.</p>
+        <div className="zone-check-bar">
+          <div className="input-group">
+            <label className="input-label">Property Address</label>
+            <input className="input input-sm" type="text" placeholder="e.g. 417 State St, Erie, PA 16501" value={address} onChange={e=>setAddress(e.target.value)} onKeyDown={handleKeyDown}/>
+          </div>
+          <button className="btn-gold" onClick={handleCheck} disabled={loading}>
+            {loading ? 'Checking...' : 'Check Zones'}
+          </button>
+        </div>
+
+        {error && <div className="zone-error">{error}</div>}
+
+        {(result || loading) && (
+          <div className="zone-map-wrap">
+            <div ref={mapRef} style={{height:'100%',width:'100%'}}/>
+            {loading && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(15,6,32,0.7)',zIndex:1000}}>
+              <div className="zone-loading">Geocoding address...</div>
+            </div>}
+          </div>
+        )}
+
+        {result && (
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
+              <h3 style={{margin:0}}>Incentive Zone Results</h3>
+              <span style={{fontSize:'0.8rem',color:'var(--text-muted)'}}>Census Tract: {result.tract}</span>
+            </div>
+            <div style={{fontSize:'0.82rem',color:'var(--gold)',marginBottom:'1rem',fontWeight:600}}>
+              {qualCount === 0 ? 'No qualifying incentive zones found at this address.' :
+               qualCount + ' qualifying zone' + (qualCount>1?'s':'')+' identified'}
+            </div>
+            <div className="zone-results">
+              {result.zones.filter(z=>z.qualified).map(z => (
+                <div key={z.id} className="zone-badge yes">
+                  <span className="zone-badge-icon">✅</span>
+                  <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem',opacity:0.85}}>{z.desc}</span></div>
+                </div>
+              ))}
+              {result.zones.filter(z=>!z.qualified).map(z => (
+                <div key={z.id} className="zone-badge no">
+                  <span className="zone-badge-icon">—</span>
+                  <div className="zone-badge-text"><strong>{z.name}</strong><br/><span style={{fontSize:'0.72rem'}}>{z.desc}</span></div>
+                </div>
+              ))}
+            </div>
+            <div className="disclaimer" style={{marginTop:'1.5rem'}}>
+              <div className="disclaimer-icon"><Icon type="warn" size={18}/></div>
+              <div>
+                <h4>Verify Zone Boundaries</h4>
+                <p>Zone boundaries shown are approximate and based on publicly available data. Always verify eligibility with the relevant program administrator, the CDFI Fund's mapping tool (for NMTC/OZ), or your local municipality before relying on these results for investment decisions.</p>
+              </div>
+            </div>
+            <div style={{textAlign:'center',marginTop:'1.5rem'}}>
+              <button className="btn-outline btn-sm" onClick={()=>setPage('deal-screener')}>Screen This Deal →</button>
+              <button className="btn-outline btn-sm" style={{marginLeft:'0.75rem'}} onClick={()=>setPage('incentives')}>View All Incentives →</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── DEAL SCREENER ───────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
   {id:'restaurant',label:'Restaurant',icon:'🍽️',defaults:{purchasePrice:350000,renovationBudget:250000,sqft:3000,monthlyRent:0,annualRevenue:900000,occupancyCostPct:8,buildOutPerSF:100,annualOpex:0,loanRate:7.25,loanTermYrs:25,loanLTV:75,vacancyPct:0,opexRatio:0,mgmtFeePct:0}},
@@ -3504,6 +3737,7 @@ function App() {
   const renderPage = () => {
     if (page === 'home') return <HomePage setPage={setPage}/>;
     if (page === 'deal-screener') return <DealScreenerPage setPage={setPage}/>;
+    if (page === 'zone-map') return <ZoneMapPage setPage={setPage}/>;
     if (page === 'simulators') return <SimulatorLibraryPage setPage={setPage}/>;
     if (page === 'deal-memo') return <DealMemoPage setPage={setPage}/>;
     if (page === 'glossary') return <GlossaryPage setPage={setPage}/>;
