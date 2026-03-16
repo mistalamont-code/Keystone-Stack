@@ -1022,7 +1022,7 @@ function Nav({page, setPage}) {
   const [open, setOpen] = useState(false);
   const navItems = [
     {id:'deal-screener',label:'Deal Screener'},
-    {id:'zone-map',label:'Zone Map'},
+    {id:'zone-map',label:'Incentive Map'},
     {id:'simulators',label:'Simulators'},
     {id:'deal-memo',label:'Deal Memo'},
     {id:'incentives',label:'Incentives'},
@@ -1129,7 +1129,7 @@ function HomePage({setPage}) {
           </div>
           <div className="pathway-card" onClick={() => setPage('zone-map')}>
             <div className="pathway-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
-            <h3>Zone Map</h3>
+            <h3>Incentive Map</h3>
             <p>Enter an address and instantly see if it falls in an Opportunity Zone, CRIZ, or other incentive areas.</p>
             <div className="pathway-meta">Check Zones <Icon type="arrow" size={12}/></div>
           </div>
@@ -3139,7 +3139,7 @@ function ZoneMapPage({setPage}) {
   return (
     <div>
       <div className="page-header">
-        <h2>Zone Map</h2>
+        <h2>Incentive Map</h2>
         <p className="page-desc">Check if a property address qualifies for Opportunity Zones, CRIZ, Historic Tax Credits, and other incentive programs.</p>
       </div>
       <div className="card" style={{maxWidth:800,margin:'0 auto'}}>
