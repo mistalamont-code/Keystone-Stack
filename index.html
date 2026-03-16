@@ -167,13 +167,15 @@ select.input { appearance: auto; }
   background: var(--purple-mid);
   position: relative; overflow: hidden;
 }
+.hero-bg {
+  position: absolute; inset: 0; z-index: 0;
+  background: url('https://www.lifeafterhighschoolbook.com/images/erie-sunset.jpg') center center / cover no-repeat;
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.hero-bg.loaded { opacity: 1; }
 .hero::before {
-  content: ''; position: absolute; inset: 0;
-  background:
-    radial-gradient(ellipse 120% 80% at 20% 20%, rgba(212,175,55,0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 100% 70% at 80% 60%, rgba(100,60,160,0.15) 0%, transparent 50%),
-    radial-gradient(ellipse 140% 60% at 50% 100%, rgba(212,175,55,0.06) 0%, transparent 40%),
-    linear-gradient(180deg, rgba(15,6,32,1) 0%, rgba(26,10,46,0.95) 25%, rgba(45,27,78,0.85) 50%, rgba(26,10,46,0.95) 75%, rgb(15,6,32) 100%);
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(180deg, rgba(15,6,32,0.88) 0%, rgba(26,10,46,0.72) 30%, rgba(45,27,78,0.6) 50%, rgba(26,10,46,0.82) 75%, rgb(15,6,32) 100%);
   pointer-events: none;
 }
 .hero::after {
@@ -1012,11 +1014,23 @@ function Nav({page, setPage}) {
 }
 
 // ─── HOME ────────────────────────────────────────────────────────────────────
+// Hero background image — fades in after load so page renders instantly
+function HeroBg() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const img = new Image();
+    img.src = 'https://www.lifeafterhighschoolbook.com/images/erie-sunset.jpg';
+    img.onload = () => { if(ref.current) ref.current.classList.add('loaded'); };
+  }, []);
+  return <div ref={ref} className="hero-bg"/>;
+}
+
 function HomePage({setPage}) {
   return (
     <div>
       <div className="hero">
-        <div className="hero-inner">
+        <HeroBg/>
+        <div className="hero-inner" style={{position:'relative',zIndex:2}}>
           <div className="hero-logo-img"><LogoHorizontal height={72}/></div>
           <h1>From Concept to Capital</h1>
           <div className="hero-subtitle">Model your deal, build your capital stack, generate lender-ready documents, and identify every incentive dollar available — all in one place.</div>
