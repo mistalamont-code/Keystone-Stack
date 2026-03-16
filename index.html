@@ -403,6 +403,19 @@ select.input { appearance: auto; }
 .metric-tile-value.green { color: #16A34A; }
 .metric-tile-value.yellow { color: #EAB308; }
 .metric-tile-value.red { color: #EF4444; }
+/* Info Tooltip */
+.info-tip { display: inline-flex; align-items: center; justify-content: center; position: relative; cursor: help; margin-left: 4px; vertical-align: middle; }
+.info-tip-icon { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--text-muted); display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: italic; font-family: Georgia, serif; color: var(--text-muted); opacity: 0.5; transition: opacity 0.2s, border-color 0.2s, color 0.2s; line-height: 1; }
+.info-tip:hover .info-tip-icon { opacity: 1; border-color: var(--gold); color: var(--gold); }
+.info-tip-bubble { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: rgba(15,6,32,0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(212,175,55,0.2); border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.72rem; font-weight: 400; line-height: 1.5; color: rgba(255,255,255,0.9); white-space: normal; width: 220px; text-transform: none; letter-spacing: 0; font-family: var(--font-body); box-shadow: 0 8px 24px rgba(0,0,0,0.4); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; z-index: 100; }
+.info-tip-bubble::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: rgba(15,6,32,0.94); }
+.info-tip:hover .info-tip-bubble { opacity: 1; visibility: visible; }
+.memo-preview .info-tip-icon { border-color: #aaa; color: #aaa; }
+.memo-preview .info-tip:hover .info-tip-icon { border-color: #D4AF37; color: #D4AF37; }
+.memo-preview .info-tip-bubble { background: rgba(30,30,30,0.95); border-color: rgba(212,175,55,0.3); }
+.memo-preview .info-tip-bubble::after { border-top-color: rgba(30,30,30,0.95); }
+@media(max-width:600px) { .info-tip-bubble { width: 180px; left: auto; right: -10px; transform: none; } .info-tip-bubble::after { left: auto; right: 14px; transform: none; } }
+
 .flag-list { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .flag-item { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.8rem; line-height: 1.5; padding: 0.4rem 0.6rem; border-radius: 6px; }
 .flag-item.green { background: rgba(22,163,74,0.08); color: #16A34A; }
@@ -960,7 +973,7 @@ function DealHealthBadge({health}) {
     <div className="deal-health">
       <div className="deal-health-header">
         <div className="deal-health-score" style={{border:'3px solid '+health.color,color:health.color}}>{health.score}</div>
-        <div><div className="deal-health-label" style={{color:health.color}}>{health.grade}</div><div className="deal-health-sublabel">Deal Health Score</div></div>
+        <div><div className="deal-health-label" style={{color:health.color}}>{health.grade}</div><div className="deal-health-sublabel">Deal Health Score<InfoTip label="Deal Health Score"/></div></div>
       </div>
       <div className="deal-health-bar"><div className="deal-health-fill" style={{width:health.score+'%',background:health.color}}/></div>
       <div className="deal-health-factors">
@@ -1010,6 +1023,39 @@ function Nav({page, setPage}) {
         ))}
       </div>
     </nav>
+  );
+}
+
+// ─── INFO TOOLTIP ─────────────────────────────────────────────────────────────
+const TIPS = {
+  'Total Cost':'Total development cost including acquisition, hard costs, soft costs, financing, and contingency.',
+  'NOI':'Net Operating Income — annual income after operating expenses, but before debt payments and taxes.',
+  'DSCR':'Debt Service Coverage Ratio — measures if the property generates enough income to cover debt payments. Lenders typically want 1.25x or higher.',
+  'Cap Rate':'Capitalization Rate — the property\'s NOI divided by total cost, showing the unlevered yield. Higher is generally better for buyers.',
+  'Cash-on-Cash':'Annual pre-tax cash flow divided by total cash invested. Shows the actual return on your out-of-pocket equity.',
+  'Annual Cash Flow':'Cash remaining after all operating expenses and debt service payments. This is what goes in your pocket.',
+  'Equity Required':'The amount of cash you need to bring to close the deal — total cost minus all debt and other funding sources.',
+  'Cost / SF':'Total development cost divided by square footage. Useful for comparing against market construction benchmarks.',
+  'Rent / SF':'Annual rent divided by square footage. Helps compare rental rates across different-sized properties.',
+  'Break-Even Occ.':'The minimum occupancy needed to cover all expenses and debt service. Lower is safer — more cushion if tenants leave.',
+  'Debt Service':'Total annual principal and interest payments across all loans on the project.',
+  'Loan Amount':'The total senior debt borrowed against the property, based on the loan-to-value ratio you set.',
+  'Total Dev Cost':'Total development cost — the full capital investment including acquisition, construction, soft costs, and financing.',
+  'Year 1 NOI':'First-year Net Operating Income after vacancy and operating expenses, before debt service.',
+  'Going-In Cap':'The cap rate at acquisition — Year 1 NOI divided by total cost. Shows your initial unlevered return.',
+  'Senior LTC':'Senior Loan-to-Cost — the senior debt as a percentage of total project cost. Lenders typically cap at 70-80%.',
+  'Cash Flow After DS':'Net cash remaining after debt service. Positive means the deal cash-flows; negative means you\'re feeding it.',
+  'Deal Health Score':'A 0-100 score based on DSCR, cap rate, cash-on-cash, break-even occupancy, and property-type-specific benchmarks.',
+};
+
+function InfoTip({label}) {
+  const tip = TIPS[label];
+  if (!tip) return null;
+  return (
+    <span className="info-tip">
+      <span className="info-tip-icon">i</span>
+      <span className="info-tip-bubble">{tip}</span>
+    </span>
   );
 }
 
@@ -2829,12 +2875,12 @@ function DealMemoPage({setPage}) {
               {memo.projectDesc && <p className="memo-narrative">{memo.projectDesc}</p>}
 
               <div className="memo-metric-grid">
-                <div className="memo-metric"><div className="memo-metric-value">{fmt(totalUses)}</div><div className="memo-metric-label">Total Dev Cost</div></div>
-                <div className="memo-metric"><div className="memo-metric-value">{fmt(noi)}</div><div className="memo-metric-label">Year 1 NOI</div></div>
-                <div className="memo-metric"><div className="memo-metric-value">{dscr===Infinity?'N/A':dscr.toFixed(2)+'x'}</div><div className="memo-metric-label">DSCR</div></div>
-                <div className="memo-metric"><div className="memo-metric-value">{fmtPct(capRate)}</div><div className="memo-metric-label">Going-In Cap</div></div>
-                <div className="memo-metric"><div className="memo-metric-value">{fmtPct(ltc)}</div><div className="memo-metric-label">Senior LTC</div></div>
-                <div className="memo-metric"><div className="memo-metric-value">{fmt(cashFlow)}</div><div className="memo-metric-label">Cash Flow After DS</div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{fmt(totalUses)}</div><div className="memo-metric-label">Total Dev Cost<InfoTip label="Total Dev Cost"/></div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{fmt(noi)}</div><div className="memo-metric-label">Year 1 NOI<InfoTip label="Year 1 NOI"/></div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{dscr===Infinity?'N/A':dscr.toFixed(2)+'x'}</div><div className="memo-metric-label">DSCR<InfoTip label="DSCR"/></div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{fmtPct(capRate)}</div><div className="memo-metric-label">Going-In Cap<InfoTip label="Going-In Cap"/></div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{fmtPct(ltc)}</div><div className="memo-metric-label">Senior LTC<InfoTip label="Senior LTC"/></div></div>
+                <div className="memo-metric"><div className="memo-metric-value">{fmt(cashFlow)}</div><div className="memo-metric-label">Cash Flow After DS<InfoTip label="Cash Flow After DS"/></div></div>
               </div>
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.5rem'}}>
@@ -3180,55 +3226,55 @@ function DealScreenerPage({setPage}) {
 
               <div className="metric-grid">
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Total Cost</div>
+                  <div className="metric-tile-label">Total Cost<InfoTip label="Total Cost"/></div>
                   <div className="metric-tile-value">{fmt(totalDevelopmentCost)}</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">NOI</div>
+                  <div className="metric-tile-label">NOI<InfoTip label="NOI"/></div>
                   <div className={`metric-tile-value ${noi > 0 ? 'green' : 'red'}`}>{fmt(noi)}</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">DSCR</div>
+                  <div className="metric-tile-label">DSCR<InfoTip label="DSCR"/></div>
                   <div className={`metric-tile-value ${dscr >= 1.25 ? 'green' : dscr >= 1.0 ? 'yellow' : 'red'}`}>{dscr === Infinity ? '∞' : dscr.toFixed(2)}x</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Cap Rate</div>
+                  <div className="metric-tile-label">Cap Rate<InfoTip label="Cap Rate"/></div>
                   <div className={`metric-tile-value ${capRate >= 7 ? 'green' : capRate >= 5 ? 'yellow' : 'red'}`}>{capRate.toFixed(1)}%</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Cash-on-Cash</div>
+                  <div className="metric-tile-label">Cash-on-Cash<InfoTip label="Cash-on-Cash"/></div>
                   <div className={`metric-tile-value ${cashOnCash >= 8 ? 'green' : cashOnCash >= 4 ? 'yellow' : 'red'}`}>{cashOnCash.toFixed(1)}%</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Annual Cash Flow</div>
+                  <div className="metric-tile-label">Annual Cash Flow<InfoTip label="Annual Cash Flow"/></div>
                   <div className={`metric-tile-value ${cashFlow > 0 ? 'green' : 'red'}`}>{fmt(cashFlow)}</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Equity Required</div>
+                  <div className="metric-tile-label">Equity Required<InfoTip label="Equity Required"/></div>
                   <div className="metric-tile-value">{fmt(equityRequired)}</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Cost / SF</div>
+                  <div className="metric-tile-label">Cost / SF<InfoTip label="Cost / SF"/></div>
                   <div className="metric-tile-value">{fmt(Math.round(costPerSF))}</div>
                 </div>
                 {!isRestaurant && (
                   <div className="metric-tile">
-                    <div className="metric-tile-label">Rent / SF</div>
+                    <div className="metric-tile-label">Rent / SF<InfoTip label="Rent / SF"/></div>
                     <div className="metric-tile-value">{fmt(Math.round(rentPerSF))}/SF</div>
                   </div>
                 )}
                 {!isRestaurant && breakEvenOccupancy > 0 && (
                   <div className="metric-tile">
-                    <div className="metric-tile-label">Break-Even Occ.</div>
+                    <div className="metric-tile-label">Break-Even Occ.<InfoTip label="Break-Even Occ."/></div>
                     <div className={`metric-tile-value ${breakEvenOccupancy <= 75 ? 'green' : breakEvenOccupancy <= 85 ? 'yellow' : 'red'}`}>{breakEvenOccupancy.toFixed(0)}%</div>
                   </div>
                 )}
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Debt Service</div>
+                  <div className="metric-tile-label">Debt Service<InfoTip label="Debt Service"/></div>
                   <div className="metric-tile-value">{fmt(annualDebtService)}/yr</div>
                 </div>
                 <div className="metric-tile">
-                  <div className="metric-tile-label">Loan Amount</div>
+                  <div className="metric-tile-label">Loan Amount<InfoTip label="Loan Amount"/></div>
                   <div className="metric-tile-value">{fmt(loanAmount)}</div>
                 </div>
               </div>
