@@ -706,7 +706,7 @@ const INCENTIVES = [
 ];
 
 const SIMULATORS = [
-  {id:"rent-vs-own",name:"Rent vs Own Commercial Property",level:"intermediate",cat:"Real Estate",desc:"Compare leasing versus purchasing commercial real estate for your business. Analyze cash flow, equity building, and long-term financial impact."},
+  {id:"rent-vs-own",name:"Lease vs Own Commercial Property",level:"intermediate",cat:"Real Estate",desc:"Compare leasing versus purchasing commercial real estate for your business. Analyze cash flow, equity building, and long-term financial impact."},
   {id:"real-estate-deal",name:"Real Estate Deal Analyzer",level:"advanced",cat:"Real Estate",desc:"Analyze investment property deals with phased occupancy, NOI growth, scenario comparison, and exit projections."},
   {id:"capital-stack",name:"Capital Stack Builder",level:"advanced",cat:"Investing",desc:"Structure deals with senior debt, mezzanine, tax credit equity, and grants. Visual stacked bar and waterfall distribution."},
   {id:"sources-uses",name:"Sources & Uses",level:"intermediate",cat:"Real Estate",desc:"Build a Sources & Uses table for any deal. Track acquisition, hard costs, soft costs, and match them to financing sources."},
@@ -820,7 +820,7 @@ function getDealHealth(type, data) {
   if (!data) return {score:0, factors:[], grade:'N/A', color:'#666'};
   switch(type) {
     case 'rent-vs-own':
-      if (data.netCostOwn < data.totalRent) { score += 20; factors.push({label:'Ownership costs less than renting',good:true}); }
+      if (data.netCostOwn < data.totalRent) { score += 20; factors.push({label:'Ownership costs less than leasing',good:true}); }
       else { score -= 15; factors.push({label:'Renting may be more cost-effective',good:false}); }
       if (data.equityBuilt > 0) { score += 15; factors.push({label:fmt(data.equityBuilt)+' equity built',good:true}); }
       const sav = data.totalRent - data.netCostOwn;
@@ -1320,7 +1320,7 @@ function ResultRow({label, value, className=''}) {
   return <div className="result-item"><span className="result-label">{label}</span><span className={`result-value ${className}`}>{value}</span></div>;
 }
 
-// FIXED: Rent vs Own — includes ownership costs, proper equity calc with principal paydown
+// FIXED: Lease vs Own — includes ownership costs, proper equity calc with principal paydown
 function RentVsOwnSim() {
   const [v, setV] = useState({lease:3000,leaseInc:3,price:500000,down:20,rate:7,term:20,propTax:1.5,insurance:3000,maint:1});
   const [results, setResults] = useState(null);
@@ -1379,8 +1379,8 @@ function RentVsOwnSim() {
         <div className="sim-results">
           {!results ? <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}>Run the simulation to see results</div> : (
             <div>
-              <div className="result-section-title">Rent Analysis</div>
-              <ResultRow label={`Total Rent Over ${v.term} Years`} value={fmt(results.totalRent)}/>
+              <div className="result-section-title">Lease Analysis</div>
+              <ResultRow label={`Total Lease Cost Over ${v.term} Years`} value={fmt(results.totalRent)}/>
               <div className="result-section-title">Own Analysis</div>
               <ResultRow label="Down Payment" value={fmt(results.downAmt)}/>
               <ResultRow label="Loan Amount" value={fmt(results.loanAmt)}/>
@@ -1394,12 +1394,12 @@ function RentVsOwnSim() {
               <ResultRow label={`Est. Property Value (3% growth)`} value={fmt(results.appreciation)} className="result-good"/>
               <ResultRow label="Total Equity Built" value={fmt(results.equityBuilt)} className="result-good"/>
               <ResultRow label="Net Cost of Owning (after equity)" value={fmt(results.netCostOwn)} className={results.netCostOwn < results.totalRent ? 'result-good' : 'result-warn'}/>
-              <ResultRow label="Net Savings (Own vs Rent)" value={fmt(results.totalRent - results.netCostOwn)} className={results.totalRent > results.netCostOwn ? 'result-good' : 'result-bad'}/>
+              <ResultRow label="Net Savings (Own vs Lease)" value={fmt(results.totalRent - results.netCostOwn)} className={results.totalRent > results.netCostOwn ? 'result-good' : 'result-bad'}/>
               <DealHealthBadge health={getDealHealth('rent-vs-own', results)}/>
-              <ExportBar title="Rent vs Own Analysis" health={getDealHealth('rent-vs-own', results)} rows={[
-                {section:'Rent Analysis'},{label:'Total Rent Over '+v.term+' Years',value:fmt(results.totalRent)},
+              <ExportBar title="Lease vs Own Analysis" health={getDealHealth('rent-vs-own', results)} rows={[
+                {section:'Lease Analysis'},{label:'Total Lease Cost Over '+v.term+' Years',value:fmt(results.totalRent)},
                 {section:'Own Analysis'},{label:'Down Payment',value:fmt(results.downAmt)},{label:'Loan Amount',value:fmt(results.loanAmt)},{label:'Monthly Mortgage',value:fmt(results.monthlyMtg)},{label:'Total Mortgage Payments',value:fmt(results.totalMortgage)},{label:'Total Property Taxes',value:fmt(results.totalTax)},{label:'Total Insurance',value:fmt(results.totalIns)},{label:'Total Maintenance',value:fmt(results.totalMaint)},{label:'Total Cost of Ownership',value:fmt(results.totalOwn)},
-                {section:'Equity & Comparison'},{label:'Est. Property Value',value:fmt(results.appreciation)},{label:'Total Equity Built',value:fmt(results.equityBuilt)},{label:'Net Cost of Owning',value:fmt(results.netCostOwn)},{label:'Net Savings (Own vs Rent)',value:fmt(results.totalRent - results.netCostOwn)}
+                {section:'Equity & Comparison'},{label:'Est. Property Value',value:fmt(results.appreciation)},{label:'Total Equity Built',value:fmt(results.equityBuilt)},{label:'Net Cost of Owning',value:fmt(results.netCostOwn)},{label:'Net Savings (Own vs Lease)',value:fmt(results.totalRent - results.netCostOwn)}
               ]}/>
             </div>
           )}
