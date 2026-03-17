@@ -869,19 +869,23 @@ function getDealHealth(type, data) {
       if (data.exitValue > 0) { score += 10; factors.push({label:'Exit value: '+fmt(data.exitValue),good:true}); }
       break;
     case 'restaurant':
-      if (data.netMargin > 15) { score += 20; factors.push({label:'Excellent net margin ('+fmtPct(data.netMargin)+')',good:true}); }
+      if (data.netMargin > 15) { score += 15; factors.push({label:'Excellent net margin ('+fmtPct(data.netMargin)+')',good:true}); }
       else if (data.netMargin > 10) { score += 10; factors.push({label:'Good net margin',good:true}); }
       else if (data.netMargin > 0) { score -= 5; factors.push({label:'Thin margins ('+fmtPct(data.netMargin)+')',good:false}); }
       else { score -= 20; factors.push({label:'Losing money',good:false}); }
-      if (data.laborPct < 30) { score += 15; factors.push({label:'Low labor cost ('+fmtPct(data.laborPct)+')',good:true}); }
+      if (data.laborPct < 30) { score += 10; factors.push({label:'Low labor cost ('+fmtPct(data.laborPct)+')',good:true}); }
       else if (data.laborPct < 35) { score += 5; factors.push({label:'Labor in range',good:true}); }
       else { score -= 10; factors.push({label:'High labor cost ('+fmtPct(data.laborPct)+')',good:false}); }
+      if (data.cogsPct <= 32) { score += 5; factors.push({label:'COGS well controlled ('+fmtPct(data.cogsPct)+')',good:true}); }
+      else if (data.cogsPct > 35) { score -= 5; factors.push({label:'COGS high ('+fmtPct(data.cogsPct)+')',good:false}); }
       if (data.primeCostPct <= 60) { score += 10; factors.push({label:'Excellent prime cost ('+fmtPct(data.primeCostPct)+')',good:true}); }
       else if (data.primeCostPct <= 65) { score += 5; factors.push({label:'Prime cost in range',good:true}); }
       else { score -= 10; factors.push({label:'Prime cost too high ('+fmtPct(data.primeCostPct)+')',good:false}); }
       if (data.occupancyCost <= 8) { score += 5; factors.push({label:'Healthy occupancy cost ('+fmtPct(data.occupancyCost)+')',good:true}); }
       else if (data.occupancyCost > 12) { score -= 10; factors.push({label:'Rent too high for revenue ('+fmtPct(data.occupancyCost)+')',good:false}); }
-      if (data.netIncome > 0) { score += 10; factors.push({label:'Profitable — '+fmt(data.netIncome)+'/yr',good:true}); }
+      if (data.revPerSeatDay >= 35) { score += 5; factors.push({label:'Strong revenue per seat ($'+data.revPerSeatDay.toFixed(0)+'/day)',good:true}); }
+      else if (data.revPerSeatDay > 0 && data.revPerSeatDay < 25) { score -= 5; factors.push({label:'Low revenue per seat ($'+data.revPerSeatDay.toFixed(0)+'/day)',good:false}); }
+      if (data.netIncome > 0) { score += 10; factors.push({label:'Profitable — '+fmt(data.netIncome)+'/yr (after owner draw)',good:true}); }
       if (data.paybackMonths > 0 && data.paybackMonths <= 24) { score += 5; factors.push({label:'Startup payback under 2 years',good:true}); }
       else if (data.paybackMonths > 36) { score -= 5; factors.push({label:'Slow payback ('+data.paybackMonths+' months)',good:false}); }
       break;
@@ -1200,12 +1204,26 @@ const TIPS = {
   'Projected Annual NOI':'Expected annual Net Operating Income — used to calculate DSCR against total debt service.',
 
   // ── Restaurant Simulator ──
+  'Concept Type':'Select your restaurant concept to load industry-standard defaults. Fast Casual ($3-5K/seat), Casual Dining ($7-12K/seat), Upscale ($12-20K/seat), Bar/Lounge, or Food Truck.',
   'Restaurant Size (sq ft)':'Total square footage of the restaurant space — affects buildout costs and revenue capacity.',
   'Number of Seats':'Total seating capacity — directly drives revenue potential through daily covers.',
   'Buildout Cost':'Total tenant improvement cost to build out the restaurant space — kitchen, dining, bar, finishes.',
   'Equipment Cost':'Kitchen equipment, POS systems, furniture, and fixtures.',
   'Initial Inventory':'Starting food, beverage, and supply inventory before opening.',
-  'Permits & Licenses':'Liquor license, health permits, fire inspection, occupancy permits, business license.',
+  'Permits & Licenses':'Health permits, fire inspection, occupancy permits, business license. Does NOT include liquor license — that\'s a separate line item in PA.',
+  'Liquor License':'In Pennsylvania, liquor licenses are quota-limited by county. Transfer licenses in Erie County currently average ~$100K. Costs vary across PA — smaller counties may run less, larger markets like Pittsburgh or Philly can be $150K+. Set to $0 if not serving alcohol.',
+  'Pre-Opening Costs':'Costs incurred before your first day of revenue — rent during buildout (2-4 months), staff training (1-2 weeks payroll), marketing for launch, test/soft opening nights. Typically $15K-$35K.',
+  'Working Capital Reserve':'Cash reserve to cover operating expenses during the first 3-6 months while building traffic. The #1 reason restaurants fail is running out of cash before reaching profitability. Budget 3-6 months of total operating expenses.',
+  'Hard Startup Costs':'Buildout + equipment + inventory + permits + liquor license — the cost to physically open the doors, before working capital and pre-opening.',
+  'Cost Per Seat':'Total startup cost divided by number of seats. Benchmarks: $3-5K/seat (fast casual), $7-12K/seat (casual dining), $15K+/seat (upscale). Helps lenders and landlords assess whether your buildout budget is realistic for the concept.',
+  'Seat Turns Per Day':'Covers per day divided by seats — how many times each seat is filled. Fast casual: 3-4 turns. Casual dining: 1.5-2.5 turns. Fine dining: 1-1.5 turns. A reality check on your cover target.',
+  'Revenue Per Seat/Day':'Daily revenue generated per available seat. $35+/seat/day is strong for casual dining, under $25 is a concern. The key metric for diagnosing whether a restaurant\'s traffic or check average is the problem.',
+  'Owner Salary / Draw':'Your own paycheck — what you need to live on. If you don\'t include this, your net income is an illusion. Most owner-operators in Erie need $45K-$65K minimum.',
+  'Startup Loan Amount':'Amount borrowed via SBA loan, equipment financing, or other debt to fund the startup. Set to $0 if fully self-funded. Monthly payments will be included in operating expenses.',
+  'Loan Term (Years)':'Repayment period for the startup loan. SBA 7(a) loans typically 7-10 years, equipment financing 3-7 years.',
+  'Annual Debt Service':'Total annual loan payments (principal + interest) on startup financing.',
+  'Monthly Loan Payment':'Monthly payment on the startup loan — included in operating expenses and affects breakeven.',
+  'Net Income (after owner draw)':'What\'s left after paying ALL expenses including your own salary. This is the true profit that builds equity in the business.',
   'Average Check Size':'Average revenue per guest including food and beverages. Key driver of total revenue.',
   'Covers Per Day':'Number of guests served per day — seats × table turns.',
   'Days Open Per Week':'Operating days per week — affects annual revenue and staffing costs.',
@@ -1889,12 +1907,26 @@ function CapitalStackSim() {
 
 // Restaurant Builder
 function RestaurantSim() {
+  const CONCEPT_PRESETS = {
+    'fast-casual': {label:'Fast Casual / Counter Service',sqft:1500,seats:40,buildout:80000,equipment:50000,inventory:8000,permits:3000,liquorLicense:0,preOpening:12000,workingCapital:30000,rent:3000,avgCheck:18,covers:120,daysOpen:6,foodCost:32,bevCost:22,bevMix:10,managers:1,mgrSalary:48000,servers:2,serverWage:12,serverHrs:7,cooks:2,cookWage:16,cookHrs:8,support:2,supportWage:13,supportHrs:5,payrollBurden:20,utilities:2000,insurance:800,marketing:4,miscPct:2,ownerDraw:50000,loanAmt:0,loanRate:7.5,loanTermYrs:7},
+    'casual-dining': {label:'Casual Dining (Full Bar)',sqft:2500,seats:60,buildout:150000,equipment:75000,inventory:15000,permits:3000,liquorLicense:100000,preOpening:25000,workingCapital:60000,rent:5000,avgCheck:35,covers:80,daysOpen:6,foodCost:30,bevCost:22,bevMix:20,managers:1,mgrSalary:55000,servers:4,serverWage:5,serverHrs:6,cooks:3,cookWage:18,cookHrs:8,support:2,supportWage:14,supportHrs:5,payrollBurden:20,utilities:3000,insurance:1200,marketing:3,miscPct:2,ownerDraw:55000,loanAmt:0,loanRate:7.5,loanTermYrs:10},
+    'upscale-casual': {label:'Upscale Casual',sqft:3500,seats:80,buildout:300000,equipment:120000,inventory:20000,permits:5000,liquorLicense:100000,preOpening:35000,workingCapital:90000,rent:8000,avgCheck:55,covers:70,daysOpen:6,foodCost:33,bevCost:20,bevMix:30,managers:2,mgrSalary:60000,servers:6,serverWage:5,serverHrs:6,cooks:4,cookWage:20,cookHrs:8,support:3,supportWage:14,supportHrs:5,payrollBurden:22,utilities:4500,insurance:1500,marketing:3,miscPct:2,ownerDraw:65000,loanAmt:0,loanRate:7.5,loanTermYrs:10},
+    'bar-lounge': {label:'Bar / Lounge',sqft:2000,seats:50,buildout:120000,equipment:60000,inventory:20000,permits:3000,liquorLicense:100000,preOpening:20000,workingCapital:50000,rent:4500,avgCheck:28,covers:70,daysOpen:6,foodCost:28,bevCost:20,bevMix:55,managers:1,mgrSalary:50000,servers:3,serverWage:5,serverHrs:6,cooks:1,cookWage:17,cookHrs:7,support:2,supportWage:13,supportHrs:5,payrollBurden:20,utilities:2500,insurance:1200,marketing:4,miscPct:2,ownerDraw:50000,loanAmt:0,loanRate:7.5,loanTermYrs:7},
+    'food-truck': {label:'Food Truck',sqft:120,seats:0,buildout:0,equipment:85000,inventory:5000,permits:4000,liquorLicense:0,preOpening:5000,workingCapital:15000,rent:500,avgCheck:14,covers:100,daysOpen:5,foodCost:30,bevCost:25,bevMix:5,managers:0,mgrSalary:0,servers:0,serverWage:0,serverHrs:0,cooks:1,cookWage:16,cookHrs:8,support:1,supportWage:13,supportHrs:6,payrollBurden:18,utilities:400,insurance:500,marketing:5,miscPct:3,ownerDraw:45000,loanAmt:0,loanRate:7.5,loanTermYrs:5}
+  };
   const [restaurantName, setRestaurantName] = useState('');
-  const [v, setV] = useState({sqft:2500,seats:60,buildout:150000,equipment:75000,inventory:15000,permits:8000,rent:5000,avgCheck:35,covers:80,daysOpen:6,foodCost:30,bevCost:22,bevMix:20,managers:1,mgrSalary:55000,servers:4,serverWage:5,serverHrs:6,cooks:3,cookWage:18,cookHrs:8,support:2,supportWage:14,supportHrs:5,payrollBurden:20,utilities:3000,insurance:1000,marketing:3,miscPct:2});
+  const [conceptType, setConceptType] = useState('casual-dining');
+  const [v, setV] = useState({sqft:2500,seats:60,buildout:150000,equipment:75000,inventory:15000,permits:3000,liquorLicense:100000,preOpening:25000,workingCapital:60000,rent:5000,avgCheck:35,covers:80,daysOpen:6,foodCost:30,bevCost:22,bevMix:20,managers:1,mgrSalary:55000,servers:4,serverWage:5,serverHrs:6,cooks:3,cookWage:18,cookHrs:8,support:2,supportWage:14,supportHrs:5,payrollBurden:20,utilities:3000,insurance:1200,marketing:3,miscPct:2,ownerDraw:55000,loanAmt:0,loanRate:7.5,loanTermYrs:10});
   const [results, setResults] = useState(null);
   const set = (k,val) => setV({...v,[k]:val});
+  const applyPreset = (type) => {
+    setConceptType(type);
+    const p = CONCEPT_PRESETS[type];
+    if (p) { const {label, ...vals} = p; setV(vals); setResults(null); }
+  };
   const run = () => {
-    const startupCost = v.buildout + v.equipment + v.inventory + v.permits;
+    const hardStartup = v.buildout + v.equipment + v.inventory + v.permits + v.liquorLicense;
+    const totalStartupCost = hardStartup + v.preOpening + v.workingCapital;
     const weeksPerYear = 52;
     const annualCovers = v.covers * v.daysOpen * weeksPerYear;
     const foodRevenue = annualCovers * v.avgCheck * (1 - v.bevMix/100);
@@ -1906,12 +1938,12 @@ function RestaurantSim() {
     const cogsPct = totalRevenue > 0 ? (totalCOGS / totalRevenue) * 100 : 0;
     const grossProfit = totalRevenue - totalCOGS;
     const mgrCost = v.managers * v.mgrSalary;
-    const serverHrs = v.servers * v.serverHrs * v.daysOpen * weeksPerYear;
-    const serverCost = serverHrs * v.serverWage;
-    const cookHrs = v.cooks * v.cookHrs * v.daysOpen * weeksPerYear;
-    const cookCost = cookHrs * v.cookWage;
-    const supportHrs = v.support * v.supportHrs * v.daysOpen * weeksPerYear;
-    const supportCost = supportHrs * v.supportWage;
+    const svrHrs = v.servers * v.serverHrs * v.daysOpen * weeksPerYear;
+    const serverCost = svrHrs * v.serverWage;
+    const ckHrs = v.cooks * v.cookHrs * v.daysOpen * weeksPerYear;
+    const cookCost = ckHrs * v.cookWage;
+    const supHrs = v.support * v.supportHrs * v.daysOpen * weeksPerYear;
+    const supportCost = supHrs * v.supportWage;
     const baseLaborCost = mgrCost + serverCost + cookCost + supportCost;
     const payrollTaxes = baseLaborCost * v.payrollBurden / 100;
     const totalLabor = baseLaborCost + payrollTaxes;
@@ -1923,23 +1955,35 @@ function RestaurantSim() {
     const annualInsurance = v.insurance * 12;
     const marketingCost = totalRevenue * v.marketing / 100;
     const miscCost = totalRevenue * v.miscPct / 100;
-    const totalOpex = annualRent + annualUtilities + annualInsurance + marketingCost + miscCost;
+    const annualOwnerDraw = v.ownerDraw;
+    // Debt service
+    let annualDebtService = 0;
+    let monthlyDebtPayment = 0;
+    if (v.loanAmt > 0 && v.loanRate > 0 && v.loanTermYrs > 0) {
+      const mr = (v.loanRate / 100) / 12;
+      const np = v.loanTermYrs * 12;
+      monthlyDebtPayment = v.loanAmt * (mr * Math.pow(1+mr,np)) / (Math.pow(1+mr,np)-1);
+      annualDebtService = monthlyDebtPayment * 12;
+    }
+    const totalOpex = annualRent + annualUtilities + annualInsurance + marketingCost + miscCost + annualOwnerDraw + annualDebtService;
     const occupancyCost = totalRevenue > 0 ? (annualRent / totalRevenue) * 100 : 0;
     const revPerSF = v.sqft > 0 ? totalRevenue / v.sqft : 0;
     const netIncome = grossProfit - totalLabor - totalOpex;
     const netMargin = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
     const monthlyCF = netIncome / 12;
-    // Breakeven: find covers/day where netIncome = 0
-    // Revenue per cover = avgCheck, variable cost per cover = avgCheck * blended COGS%
-    // Fixed costs = totalLabor + totalOpex (approx)
+    // New metrics
+    const costPerSeat = v.seats > 0 ? totalStartupCost / v.seats : 0;
+    const seatTurns = v.seats > 0 ? v.covers / v.seats : 0;
+    const revPerSeatDay = v.seats > 0 && v.daysOpen > 0 ? totalRevenue / (v.seats * v.daysOpen * weeksPerYear) : 0;
+    // Breakeven
     const fixedCosts = totalLabor + totalOpex;
     const revenuePerCover = v.avgCheck;
     const variableCostPerCover = v.avgCheck * (cogsPct / 100);
     const contributionPerCover = revenuePerCover - variableCostPerCover;
     const annualBreakevenCovers = contributionPerCover > 0 ? Math.ceil(fixedCosts / contributionPerCover) : 0;
     const breakevenCoversPerDay = v.daysOpen > 0 ? Math.ceil(annualBreakevenCovers / (v.daysOpen * weeksPerYear)) : 0;
-    const paybackMonths = monthlyCF > 0 ? Math.ceil(startupCost / monthlyCF) : 0;
-    setResults({startupCost,totalRevenue,foodRevenue,bevRevenue,totalCOGS,cogsPct,grossProfit,totalLabor,laborPct,primeCost,primeCostPct,totalOpex,annualRent,occupancyCost,revPerSF,netIncome,netMargin,monthlyCF,annualCovers,breakevenCoversPerDay,paybackMonths,annualUtilities,annualInsurance,marketingCost,miscCost,payrollTaxes});
+    const paybackMonths = monthlyCF > 0 ? Math.ceil(totalStartupCost / monthlyCF) : 0;
+    setResults({startupCost:totalStartupCost,hardStartup,totalRevenue,foodRevenue,bevRevenue,totalCOGS,cogsPct,grossProfit,totalLabor,laborPct,primeCost,primeCostPct,totalOpex,annualRent,occupancyCost,revPerSF,netIncome,netMargin,monthlyCF,annualCovers,breakevenCoversPerDay,paybackMonths,annualUtilities,annualInsurance,marketingCost,miscCost,payrollTaxes,costPerSeat,seatTurns,revPerSeatDay,annualOwnerDraw,annualDebtService,monthlyDebtPayment});
   };
   return (
     <div className="sim-page">
@@ -1951,11 +1995,21 @@ function RestaurantSim() {
           <input className="input input-sm" type="text" placeholder="e.g. The Corner Bistro" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)}/>
         </div>
 
+        <div className="input-group" style={{margin:'0 0 0.75rem 0'}}>
+          <label className="input-label">Concept Type<InfoTip label="Concept Type"/></label>
+          <select className="input input-sm" value={conceptType} onChange={e=>applyPreset(e.target.value)} style={{cursor:'pointer'}}>
+            {Object.entries(CONCEPT_PRESETS).map(([k,p]) => <option key={k} value={k}>{p.label}</option>)}
+          </select>
+        </div>
+
         <div className="result-section-title" style={{marginTop:0}}>Startup Costs</div>
         <NumInput label="Buildout Cost" value={v.buildout} onChange={val=>set('buildout',val)}/>
         <NumInput label="Equipment Cost" value={v.equipment} onChange={val=>set('equipment',val)}/>
         <NumInput label="Initial Inventory" value={v.inventory} onChange={val=>set('inventory',val)} step={1000}/>
         <NumInput label="Permits & Licenses" value={v.permits} onChange={val=>set('permits',val)} step={1000}/>
+        <NumInput label="Liquor License" value={v.liquorLicense} onChange={val=>set('liquorLicense',val)} step={5000}/>
+        <NumInput label="Pre-Opening Costs" value={v.preOpening} onChange={val=>set('preOpening',val)} step={1000}/>
+        <NumInput label="Working Capital Reserve" value={v.workingCapital} onChange={val=>set('workingCapital',val)} step={5000}/>
 
         <div className="result-section-title">Space & Revenue</div>
         <NumInput label="Restaurant Size (sq ft)" value={v.sqft} onChange={val=>set('sqft',val)} prefix="" suffix="sq ft" step={100}/>
@@ -1985,10 +2039,16 @@ function RestaurantSim() {
         <NumInput label="Payroll Tax & Benefits %" value={v.payrollBurden} onChange={val=>set('payrollBurden',val)} prefix="" suffix="%" step={1}/>
 
         <div className="result-section-title">Operating Overhead</div>
+        <NumInput label="Owner Salary / Draw" value={v.ownerDraw} onChange={val=>set('ownerDraw',val)} step={5000}/>
         <NumInput label="Monthly Utilities" value={v.utilities} onChange={val=>set('utilities',val)} step={250}/>
         <NumInput label="Monthly Insurance" value={v.insurance} onChange={val=>set('insurance',val)} step={250}/>
         <NumInput label="Marketing (% of Revenue)" value={v.marketing} onChange={val=>set('marketing',val)} prefix="" suffix="%" step={1}/>
         <NumInput label="Misc Expenses (% of Revenue)" value={v.miscPct} onChange={val=>set('miscPct',val)} prefix="" suffix="%" step={1}/>
+
+        <div className="result-section-title">Financing</div>
+        <NumInput label="Startup Loan Amount" value={v.loanAmt} onChange={val=>set('loanAmt',val)} step={10000}/>
+        <NumInput label="Loan Interest Rate" value={v.loanRate} onChange={val=>set('loanRate',val)} prefix="" suffix="%" step={0.25}/>
+        <NumInput label="Loan Term (Years)" value={v.loanTermYrs} onChange={val=>set('loanTermYrs',val)} prefix="" suffix="yrs" step={1}/>
 
         <button className="btn-gold" style={{width:'100%',marginTop:'0.75rem'}} onClick={run}><Icon type="play" size={16}/> Run Simulation</button>
       </div>
@@ -1996,10 +2056,14 @@ function RestaurantSim() {
         {!results ? <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}>Run the simulation to see results</div> : (
           <div>
             <div className="result-section-title">Startup Investment</div>
+            <ResultRow label="Hard Startup Costs" value={fmt(results.hardStartup)}/>
             <ResultRow label="Total Startup Cost" value={fmt(results.startupCost)}/>
+            <ResultRow label="Cost Per Seat" value={results.costPerSeat > 0 ? fmt(results.costPerSeat) : 'N/A'} className={results.costPerSeat > 0 && results.costPerSeat <= 8000 ? 'result-good' : results.costPerSeat <= 15000 ? 'result-warn' : 'result-bad'}/>
             <ResultRow label="Payback Period" value={results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A — not profitable'} className={results.paybackMonths > 0 && results.paybackMonths <= 24 ? 'result-good' : results.paybackMonths > 0 ? 'result-warn' : 'result-bad'}/>
             <div className="result-section-title">Revenue</div>
             <ResultRow label="Annual Covers" value={results.annualCovers.toLocaleString()}/>
+            <ResultRow label="Seat Turns Per Day" value={results.seatTurns > 0 ? results.seatTurns.toFixed(1) : 'N/A'} className={results.seatTurns >= 1.5 ? 'result-good' : results.seatTurns >= 1.0 ? 'result-warn' : 'result-bad'}/>
+            <ResultRow label="Revenue Per Seat/Day" value={results.revPerSeatDay > 0 ? fmt(results.revPerSeatDay) : 'N/A'} className={results.revPerSeatDay >= 35 ? 'result-good' : results.revPerSeatDay >= 25 ? 'result-warn' : 'result-bad'}/>
             <ResultRow label="Food Revenue" value={fmt(results.foodRevenue)}/>
             <ResultRow label="Beverage Revenue" value={fmt(results.bevRevenue)}/>
             <ResultRow label="Total Revenue" value={fmt(results.totalRevenue)} className="result-good"/>
@@ -2018,13 +2082,16 @@ function RestaurantSim() {
             <div className="result-section-title">Operating Expenses</div>
             <ResultRow label="Rent" value={fmt(results.annualRent)}/>
             <ResultRow label="Occupancy Cost %" value={fmtPct(results.occupancyCost)} className={results.occupancyCost <= 8 ? 'result-good' : results.occupancyCost <= 12 ? 'result-warn' : 'result-bad'}/>
+            <ResultRow label="Owner Salary / Draw" value={fmt(results.annualOwnerDraw)}/>
             <ResultRow label="Utilities" value={fmt(results.annualUtilities)}/>
             <ResultRow label="Insurance" value={fmt(results.annualInsurance)}/>
             <ResultRow label="Marketing" value={fmt(results.marketingCost)}/>
             <ResultRow label="Miscellaneous" value={fmt(results.miscCost)}/>
+            {results.annualDebtService > 0 && <ResultRow label="Annual Debt Service" value={fmt(results.annualDebtService)}/>}
+            {results.monthlyDebtPayment > 0 && <ResultRow label="Monthly Loan Payment" value={fmt(results.monthlyDebtPayment)}/>}
             <ResultRow label="Total Operating Expenses" value={fmt(results.totalOpex)}/>
             <div className="result-section-title">Bottom Line</div>
-            <ResultRow label="Net Income" value={fmt(results.netIncome)} className={results.netIncome > 0 ? 'result-good' : 'result-bad'}/>
+            <ResultRow label="Net Income (after owner draw)" value={fmt(results.netIncome)} className={results.netIncome > 0 ? 'result-good' : 'result-bad'}/>
             <ResultRow label="Net Margin" value={fmtPct(results.netMargin)} className={results.netMargin > 10 ? 'result-good' : results.netMargin > 0 ? 'result-warn' : 'result-bad'}/>
             <ResultRow label="Monthly Cash Flow" value={fmt(results.monthlyCF)} className={results.monthlyCF > 0 ? 'result-good' : 'result-bad'}/>
             <div className="result-section-title">Breakeven</div>
@@ -2033,13 +2100,13 @@ function RestaurantSim() {
             <ResultRow label="Cushion" value={results.breakevenCoversPerDay > 0 && v.covers > results.breakevenCoversPerDay ? (v.covers - results.breakevenCoversPerDay) + ' covers/day above breakeven' : 'Below breakeven'} className={v.covers > results.breakevenCoversPerDay ? 'result-good' : 'result-bad'}/>
               <DealHealthBadge health={getDealHealth('restaurant', results)}/>
               <ExportBar title={(restaurantName || 'Restaurant') + ' — Business Plan'} health={getDealHealth('restaurant', results)} rows={[
-                {section:'Startup'},{label:'Total Startup Cost',value:fmt(results.startupCost)},{label:'Payback Period',value:results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A'},
-                {section:'Revenue'},{label:'Annual Covers',value:results.annualCovers.toLocaleString()},{label:'Food Revenue',value:fmt(results.foodRevenue)},{label:'Beverage Revenue',value:fmt(results.bevRevenue)},{label:'Total Revenue',value:fmt(results.totalRevenue)},{label:'Revenue Per Sq Ft',value:fmt(results.revPerSF)},
+                {section:'Startup'},{label:'Total Startup Cost',value:fmt(results.startupCost)},{label:'Hard Startup Costs',value:fmt(results.hardStartup)},{label:'Cost Per Seat',value:results.costPerSeat > 0 ? fmt(results.costPerSeat) : 'N/A'},{label:'Payback Period',value:results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A'},
+                {section:'Revenue'},{label:'Annual Covers',value:results.annualCovers.toLocaleString()},{label:'Seat Turns Per Day',value:results.seatTurns > 0 ? results.seatTurns.toFixed(1) : 'N/A'},{label:'Revenue Per Seat/Day',value:results.revPerSeatDay > 0 ? fmt(results.revPerSeatDay) : 'N/A'},{label:'Food Revenue',value:fmt(results.foodRevenue)},{label:'Beverage Revenue',value:fmt(results.bevRevenue)},{label:'Total Revenue',value:fmt(results.totalRevenue)},{label:'Revenue Per Sq Ft',value:fmt(results.revPerSF)},
                 {section:'Cost of Goods'},{label:'Total COGS',value:fmt(results.totalCOGS)},{label:'COGS %',value:fmtPct(results.cogsPct)},{label:'Gross Profit',value:fmt(results.grossProfit)},
                 {section:'Labor'},{label:'Total Labor',value:fmt(results.totalLabor)},{label:'Labor %',value:fmtPct(results.laborPct)},
                 {section:'Prime Cost'},{label:'Prime Cost (COGS + Labor)',value:fmt(results.primeCost)},{label:'Prime Cost %',value:fmtPct(results.primeCostPct)},
-                {section:'Operating Expenses'},{label:'Rent',value:fmt(results.annualRent)},{label:'Occupancy Cost %',value:fmtPct(results.occupancyCost)},{label:'Utilities',value:fmt(results.annualUtilities)},{label:'Insurance',value:fmt(results.annualInsurance)},{label:'Marketing',value:fmt(results.marketingCost)},{label:'Total Operating Expenses',value:fmt(results.totalOpex)},
-                {section:'Bottom Line'},{label:'Net Income',value:fmt(results.netIncome)},{label:'Net Margin',value:fmtPct(results.netMargin)},{label:'Monthly Cash Flow',value:fmt(results.monthlyCF)},
+                {section:'Operating Expenses'},{label:'Rent',value:fmt(results.annualRent)},{label:'Occupancy Cost %',value:fmtPct(results.occupancyCost)},{label:'Owner Salary / Draw',value:fmt(results.annualOwnerDraw)},{label:'Utilities',value:fmt(results.annualUtilities)},{label:'Insurance',value:fmt(results.annualInsurance)},{label:'Marketing',value:fmt(results.marketingCost)},{label:'Debt Service',value:fmt(results.annualDebtService)},{label:'Total Operating Expenses',value:fmt(results.totalOpex)},
+                {section:'Bottom Line'},{label:'Net Income (after owner draw)',value:fmt(results.netIncome)},{label:'Net Margin',value:fmtPct(results.netMargin)},{label:'Monthly Cash Flow',value:fmt(results.monthlyCF)},
                 {section:'Breakeven'},{label:'Breakeven Covers/Day',value:results.breakevenCoversPerDay},{label:'Your Target Covers/Day',value:v.covers}
               ]}/>
           </div>
