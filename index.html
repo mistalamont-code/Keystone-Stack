@@ -3939,97 +3939,175 @@ const COACH_KB = [
 
 function AICoachPage() {
   const [messages, setMessages] = useState([
-    {role:'ai', text:"Welcome to the AI Business Coach. I have deep knowledge of 17 incentive programs, capital stack structures, pro forma modeling, and Erie's development finance landscape.\n\nAsk me about any program — HTC, NMTC, Opportunity Zones, LERTA, CRIZ, RACP, LIHTC, SBA 504, and more. Or ask about financial concepts like cap rates, DSCR, NOI, waterfall distributions, or how to close a funding gap.\n\nWhat are you working on?"}
+    {role:'ai', text:"Welcome to the AI Business Coach. I'm powered by Claude AI with deep knowledge of development finance, incentive programs, capital stacks, restaurant planning, and Erie's economic development landscape.\n\nAsk me anything — deal structuring, program eligibility, financial concepts, or paste in your numbers and I'll analyze them.\n\nWhat are you working on?"}
   ]);
   const [input, setInput] = useState('');
+  const [isThinking, setIsThinking] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem('ks_api_key') || ''; } catch(e) { return ''; }
+  });
+  const [apiStatus, setApiStatus] = useState('unknown'); // unknown, ok, error, checking
+  const [backendAvailable, setBackendAvailable] = useState(null);
   const chatEnd = useRef(null);
-  useEffect(() => { chatEnd.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
+  useEffect(() => { chatEnd.current?.scrollIntoView({behavior:'smooth'}); }, [messages, isThinking]);
 
+  // Check if backend server is running
+  useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const resp = await fetch('/api/health', {signal: AbortSignal.timeout(2000)});
+        const data = await resp.json();
+        if (data.status === 'ok') {
+          setBackendAvailable(true);
+          if (data.hasKey) setApiStatus('ok');
+        }
+      } catch(e) {
+        setBackendAvailable(false);
+      }
+    };
+    checkBackend();
+  }, []);
+
+  const saveApiKey = (key) => {
+    setApiKey(key);
+    try { localStorage.setItem('ks_api_key', key); } catch(e) {}
+    if (key.startsWith('sk-ant-')) setApiStatus('ok');
+    else if (key === '') setApiStatus('unknown');
+  };
+
+  const isAIEnabled = () => backendAvailable && (apiStatus === 'ok' || apiKey);
+
+  // Local KB fallback
   const findBestMatch = (query) => {
     const lower = query.toLowerCase();
-
-    // Greeting
     if (/^(hi|hey|hello|yo|sup|what'?s up)\b/i.test(lower.trim())) {
       return {title:'Welcome',text:"Hey! I'm the Keystone Stack AI Business Coach. I can explain incentive programs (HTC, NMTC, OZ, LERTA, CRIZ, RACP, LIHTC, and 10 more), financial concepts (cap rate, NOI, DSCR, IRR, capital stacks), and deal structuring strategies.\n\nTry asking something like:\n• \"How do Historic Tax Credits work?\"\n• \"What's CRIZ and why does it matter?\"\n• \"Explain DSCR\"\n• \"How do I close a funding gap?\"\n• \"What incentives work best in Erie?\"\n\nWhat would you like to know?"};
     }
-
-    // Score each KB entry
-    let bestScore = 0;
     let bestEntries = [];
-
     for (const entry of COACH_KB) {
       let score = 0;
       for (const key of entry.keys) {
         if (lower.includes(key)) {
-          // Longer key matches are worth more
           score += key.length;
-          // Exact word boundary match is worth extra
           const regex = new RegExp('\\b' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
           if (regex.test(lower)) score += key.length;
         }
       }
       if (score > 0) bestEntries.push({entry, score});
     }
-
     bestEntries.sort((a,b) => b.score - a.score);
-
-    // Multi-topic detection: if user asks about combining/comparing programs
     const combineWords = ['combine','layer','together','pair','stack','both','and','with','versus','vs','compare','difference'];
     const isCombining = combineWords.some(w => lower.includes(w)) && bestEntries.length >= 2;
-
     if (isCombining && bestEntries.length >= 2) {
-      const e1 = bestEntries[0].entry;
-      const e2 = bestEntries[1].entry;
-      return {
-        title: e1.title + ' + ' + e2.title,
-        text: `Here's what you need to know about both:\n\n━━ ${e1.title} ━━\n${e1.text}\n\n━━ ${e2.title} ━━\n${e2.text}\n\nLayering tip: These programs can often be combined in a single capital stack. The key is ensuring compliance periods and timelines align. Check the Incentives page for detailed checklists on each program.`
-      };
+      const e1 = bestEntries[0].entry; const e2 = bestEntries[1].entry;
+      return {title:e1.title+' + '+e2.title, text:'Here\'s what you need to know about both:\n\n━━ '+e1.title+' ━━\n'+e1.text+'\n\n━━ '+e2.title+' ━━\n'+e2.text+'\n\nLayering tip: These programs can often be combined in a single capital stack. The key is ensuring compliance periods and timelines align.'};
     }
-
-    if (bestEntries.length > 0) {
-      return bestEntries[0].entry;
-    }
-
-    // Fuzzy fallback: check for partial matches
+    if (bestEntries.length > 0) return bestEntries[0].entry;
     const words = lower.split(/\s+/).filter(w => w.length > 3);
     for (const entry of COACH_KB) {
-      for (const key of entry.keys) {
-        for (const word of words) {
-          if (key.includes(word) || word.includes(key)) {
-            return entry;
-          }
-        }
-      }
+      for (const key of entry.keys) { for (const word of words) { if (key.includes(word) || word.includes(key)) return entry; } }
     }
-
     return null;
   };
 
-  const send = () => {
-    if (!input.trim()) return;
+  const sendToAI = async (userMsg, allMessages) => {
+    // Build conversation for Claude API
+    const apiMessages = allMessages
+      .filter(m => m.role === 'user' || (m.role === 'ai' && !m.isThinking))
+      .map(m => ({role: m.role === 'ai' ? 'assistant' : 'user', content: m.text}));
+    // Add current message
+    apiMessages.push({role: 'user', content: userMsg});
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({messages: apiMessages, apiKey: apiKey || undefined}),
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      return data.text;
+    } catch(err) {
+      throw err;
+    }
+  };
+
+  const send = async () => {
+    if (!input.trim() || isThinking) return;
     const userMsg = input.trim();
     setMessages(prev => [...prev, {role:'user', text: userMsg}]);
     setInput('');
 
-    setTimeout(() => {
-      const match = findBestMatch(userMsg);
-      if (match) {
-        setMessages(prev => [...prev, {role:'ai', text: match.text}]);
-      } else {
-        setMessages(prev => [...prev, {role:'ai', text:"I don't have a specific answer for that, but I can help with:\n\n• 17 Incentive Programs: HTC, NMTC, Opportunity Zones, LIHTC, LERTA, CRIZ, RACP, KOZ, SBA 504, EB-5, CDBG, EDA, EPA Brownfields, Keystone Communities, NPP, PA First, PIDA\n\n• Financial Concepts: Cap rate, NOI, DSCR, IRR, cash-on-cash, LTV/LTC, capital stacks, sources & uses, waterfall distributions, pro forma modeling\n\n• Deal Structuring: Gap financing, incentive layering, construction budgeting, lease structures, tenant recruitment, phased development\n\nTry asking about a specific program or concept!"}]);
+    if (isAIEnabled()) {
+      // Use Claude API
+      setIsThinking(true);
+      try {
+        const response = await sendToAI(userMsg, messages);
+        setMessages(prev => [...prev, {role:'ai', text: response}]);
+      } catch(err) {
+        // Fall back to local KB on API error
+        console.warn('AI API error, falling back to local KB:', err.message);
+        const match = findBestMatch(userMsg);
+        if (match) {
+          setMessages(prev => [...prev, {role:'ai', text: match.text + '\n\n⚠️ Note: AI engine temporarily unavailable. Showing local knowledge base result.'}]);
+        } else {
+          setMessages(prev => [...prev, {role:'ai', text: '⚠️ AI engine error: ' + err.message + '\n\nThe local knowledge base didn\'t have a match either. Try asking about a specific incentive program (HTC, NMTC, CRIZ, etc.) or financial concept (cap rate, DSCR, NOI).'}]);
+        }
       }
-    }, 250);
+      setIsThinking(false);
+    } else {
+      // Local KB only
+      setTimeout(() => {
+        const match = findBestMatch(userMsg);
+        if (match) {
+          setMessages(prev => [...prev, {role:'ai', text: match.text}]);
+        } else {
+          setMessages(prev => [...prev, {role:'ai', text:"I don't have a specific answer for that in my local knowledge base.\n\n💡 To unlock full AI-powered responses, click the ⚙️ icon above and connect your Claude API key. With AI enabled, I can answer any development finance question, analyze your deal numbers, and provide custom guidance.\n\nFor now, try asking about a specific program:\n• HTC, NMTC, Opportunity Zones, LIHTC, LERTA, CRIZ, RACP\n• Cap rate, DSCR, NOI, IRR, capital stacks\n• Gap financing, incentive layering, deal structuring"}]);
+        }
+      }, 250);
+    }
   };
 
   return (
     <div>
       <div className="page-header">
-        <div className="page-header-inner">
-          <h1>AI Business Coach</h1>
-          <p>Deep knowledge of incentive programs, capital stacks, and development finance</p>
+        <div className="page-header-inner" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div>
+            <h1>AI Business Coach</h1>
+            <p>{isAIEnabled() ? 'Powered by Claude AI — ask anything about development finance, deal structuring, or incentive programs' : 'Local knowledge base active — connect API key for full AI'}</p>
+          </div>
+          <button className="nav-gear" onClick={() => setShowSettings(!showSettings)} title="AI Settings" style={{fontSize:'1.2rem'}}>⚙️</button>
         </div>
       </div>
       <div className="content">
+        {showSettings && (
+          <div className="settings-card" style={{marginBottom:'1.5rem'}}>
+            <h3>AI Engine Settings</h3>
+            <p>Connect your Claude API key to unlock full AI-powered responses. Without a key, the coach uses a local knowledge base with {COACH_KB.length} topics.</p>
+            {backendAvailable === false && (
+              <div className="settings-status settings-status-none" style={{marginBottom:'0.75rem'}}>
+                <span>⚠️</span>
+                <span>Backend server not detected. Start it with: <code style={{background:'rgba(255,255,255,0.1)',padding:'2px 6px',borderRadius:'4px',fontSize:'0.8rem'}}>ANTHROPIC_API_KEY=your-key node server.js</code></span>
+              </div>
+            )}
+            {backendAvailable && (
+              <div>
+                <div className="settings-key-row">
+                  <input className="input" type="password" placeholder="sk-ant-api03-..." value={apiKey} onChange={e => saveApiKey(e.target.value)} style={{fontFamily:'monospace',fontSize:'0.85rem',letterSpacing:'0.5px'}}/>
+                </div>
+                <div className={'settings-status ' + (apiStatus === 'ok' ? 'settings-status-ok' : 'settings-status-none')} style={{marginTop:'0.75rem'}}>
+                  {apiStatus === 'ok' ? (
+                    <><span>✓</span><span>AI engine connected — full Claude-powered responses active</span></>
+                  ) : (
+                    <><span>○</span><span>Enter your Anthropic API key above, or set ANTHROPIC_API_KEY on the server</span></>
+                  )}
+                </div>
+                <p style={{fontSize:'0.78rem',color:'var(--text-muted)',marginTop:'0.75rem',lineHeight:'1.5'}}>Your key is stored locally in your browser and sent only to the backend proxy. It is never sent to any third party. You can get a key at <span style={{color:'var(--gold)'}}>console.anthropic.com</span>.</p>
+              </div>
+            )}
+          </div>
+        )}
         <div className="chat-container">
           <div className="chat-messages">
             {messages.map((m,i) => (
@@ -4038,11 +4116,22 @@ function AICoachPage() {
                 <div className="chat-bubble" style={{whiteSpace:'pre-wrap'}}>{m.text}</div>
               </div>
             ))}
+            {isThinking && (
+              <div className="chat-msg chat-msg-ai">
+                <div className="chat-avatar">AI</div>
+                <div className="chat-bubble">
+                  <div className="chat-thinking">
+                    <div className="chat-thinking-dots"><span></span><span></span><span></span></div>
+                    <span>Thinking...</span>
+                  </div>
+                </div>
+              </div>
+            )}
             <div ref={chatEnd}/>
           </div>
           <div className="chat-input-row">
-            <input className="input" placeholder="Ask about HTC, NMTC, CRIZ, cap rates, capital stacks..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}/>
-            <button className="btn-gold btn-sm" onClick={send}><Icon type="send" size={16}/></button>
+            <input className="input" placeholder={isAIEnabled() ? "Ask anything about deals, incentives, restaurant planning, capital stacks..." : "Ask about HTC, NMTC, CRIZ, cap rates, capital stacks..."} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={isThinking}/>
+            <button className="btn-gold btn-sm" onClick={send} disabled={isThinking}><Icon type="send" size={16}/></button>
           </div>
         </div>
       </div>
