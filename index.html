@@ -876,7 +876,14 @@ function getDealHealth(type, data) {
       if (data.laborPct < 30) { score += 15; factors.push({label:'Low labor cost ('+fmtPct(data.laborPct)+')',good:true}); }
       else if (data.laborPct < 35) { score += 5; factors.push({label:'Labor in range',good:true}); }
       else { score -= 10; factors.push({label:'High labor cost ('+fmtPct(data.laborPct)+')',good:false}); }
-      if (data.netIncome > 0) { score += 10; factors.push({label:'Profitable \u2014 '+fmt(data.netIncome)+'/yr',good:true}); }
+      if (data.primeCostPct <= 60) { score += 10; factors.push({label:'Excellent prime cost ('+fmtPct(data.primeCostPct)+')',good:true}); }
+      else if (data.primeCostPct <= 65) { score += 5; factors.push({label:'Prime cost in range',good:true}); }
+      else { score -= 10; factors.push({label:'Prime cost too high ('+fmtPct(data.primeCostPct)+')',good:false}); }
+      if (data.occupancyCost <= 8) { score += 5; factors.push({label:'Healthy occupancy cost ('+fmtPct(data.occupancyCost)+')',good:true}); }
+      else if (data.occupancyCost > 12) { score -= 10; factors.push({label:'Rent too high for revenue ('+fmtPct(data.occupancyCost)+')',good:false}); }
+      if (data.netIncome > 0) { score += 10; factors.push({label:'Profitable — '+fmt(data.netIncome)+'/yr',good:true}); }
+      if (data.paybackMonths > 0 && data.paybackMonths <= 24) { score += 5; factors.push({label:'Startup payback under 2 years',good:true}); }
+      else if (data.paybackMonths > 36) { score -= 5; factors.push({label:'Slow payback ('+data.paybackMonths+' months)',good:false}); }
       break;
     case 'pro-forma':
       const y1pf = data.years[0]; const y10pf = data.years[9];
@@ -1047,6 +1054,7 @@ function Nav({page, setPage}) {
 
 // ─── INFO TOOLTIP ─────────────────────────────────────────────────────────────
 const TIPS = {
+  // ── Core Metrics (used across multiple pages) ──
   'Total Cost':'Total development cost including acquisition, hard costs, soft costs, financing, and contingency.',
   'NOI':'Net Operating Income — annual income after operating expenses, but before debt payments and taxes.',
   'DSCR':'Debt Service Coverage Ratio — measures if the property generates enough income to cover debt payments. Lenders typically want 1.25x or higher.',
@@ -1065,6 +1073,184 @@ const TIPS = {
   'Senior LTC':'Senior Loan-to-Cost — the senior debt as a percentage of total project cost. Lenders typically cap at 70-80%.',
   'Cash Flow After DS':'Net cash remaining after debt service. Positive means the deal cash-flows; negative means you\'re feeding it.',
   'Deal Health Score':'A 0-100 score based on DSCR, cap rate, cash-on-cash, break-even occupancy, and property-type-specific benchmarks.',
+
+  // ── Deal Screener & Deal Memo Inputs ──
+  'Purchase Price':'The acquisition cost of the property or land. For existing buildings, this is the contract price.',
+  'Renovation Budget':'Estimated hard costs for construction, rehabilitation, or tenant improvements.',
+  'Square Footage':'Total rentable or usable square footage of the building or project.',
+  'Monthly Rent':'Gross monthly rental income from all tenants or units combined.',
+  'Annual Revenue':'Total annual gross revenue — used for commercial businesses like restaurants instead of rent.',
+  'Vacancy Rate':'The percentage of units or space expected to be vacant. Market standard is 5-10% for stabilized properties.',
+  'Operating Expenses':'Annual costs to run the property — insurance, taxes, maintenance, management, utilities. Does not include debt service.',
+  'OpEx Ratio':'Operating expenses as a percentage of effective gross income. Typical range is 30-50% depending on property type.',
+  'Loan Rate':'Annual interest rate on the senior mortgage or construction loan.',
+  'Loan Term':'The amortization period of the loan in years. Typical commercial loans are 20-30 years.',
+  'Loan LTV':'Loan-to-Value — the loan amount as a percentage of property value or cost. Banks typically lend 65-80%.',
+  'Management Fee':'Property management fee as a percentage of collected rent. Typically 5-10% for commercial properties.',
+  'Acquisition Cost':'The cost to acquire the property or land — purchase price plus closing costs.',
+  'Hard Costs':'Direct construction costs — labor, materials, equipment, and subcontractor work.',
+  'Soft Costs':'Non-construction costs — architecture, engineering, legal, permits, inspections, accounting.',
+  'Financing Costs':'Loan origination fees, points, commitment fees, and interest during construction.',
+  'Contingency':'A reserve for unexpected costs — typically 5-15% of hard costs. Lenders expect to see this.',
+
+  // ── Sources of Funds ──
+  'Senior Debt':'The primary loan on the project — typically a bank mortgage with the lowest interest rate and first lien position.',
+  'Mezzanine Debt':'Secondary debt that fills the gap between senior debt and equity. Higher rate, subordinate to the senior lender.',
+  'Tax Credit Equity':'Equity raised by selling tax credits (Historic, NMTC, LIHTC, Opportunity Zone) to investors.',
+  'Grant Funds':'Non-repayable funding from government programs (RACP, CDBG, EDA) or foundations.',
+  'Owner Equity':'Cash invested directly by the project sponsor or developer. Lenders want to see skin in the game — typically 10-20% of total cost.',
+  'Funding Gap':'The shortfall between total uses and total sources. A positive gap means you need to find more funding.',
+
+  // ── Pro Forma Waterfall ──
+  'Gross Potential Rent':'Total annual rent if the property were 100% occupied at full market rents.',
+  'Effective Gross Income':'Gross Potential Rent minus vacancy and collection loss. This is your realistic top-line income.',
+  'Net Operating Income':'Revenue minus operating expenses, before debt service. The single most important number in commercial real estate.',
+
+  // ── Lease vs Own Simulator ──
+  'Monthly Lease':'The monthly lease payment for renting equivalent commercial space.',
+  'Lease Escalation':'Annual percentage increase in lease payments — typically 2-4% per year.',
+  'Down Payment':'Cash required at closing — typically 20-30% of purchase price for commercial loans.',
+  'Property Tax Rate':'Annual property tax as a percentage of assessed value. Varies by municipality.',
+  'Maintenance Reserve':'Annual budget for repairs and maintenance, as a percentage of property value. Typically 1-2%.',
+  'Total Equity Built':'The principal paid down on the mortgage plus appreciation — this is wealth you\'re building by owning.',
+
+  // ── Hold Period / Investment Simulator ──
+  'Rent Growth':'Annual percentage increase in rental income — driven by market conditions and lease escalations.',
+  'Expense Growth':'Annual percentage increase in operating expenses — typically 2-3% per year.',
+  'Exit Cap Rate':'The capitalization rate used to estimate sale price at the end of your hold period. Higher cap = lower price.',
+  'Hold Period':'Number of years you plan to own the property before selling. Typical investment hold is 5-10 years.',
+  'Selling Costs':'Broker commissions, transfer taxes, and legal fees at sale — typically 3-6% of sale price.',
+  'Exit Value':'Estimated sale price at the end of the hold period, calculated as projected NOI divided by exit cap rate.',
+  'Net Proceeds':'Cash received after paying off remaining debt, selling costs, and return of invested capital.',
+  'Total Profit':'All cash flow received during hold period plus net proceeds from sale, minus your original equity investment.',
+  'ROI on Equity':'Total profit divided by equity invested — your overall return on the cash you put in.',
+  'IRR':'Internal Rate of Return — the annualized return that accounts for the timing of every cash flow. The gold standard for comparing investments.',
+  'Remaining Loan':'The outstanding principal balance on the mortgage at the time of sale.',
+
+  // ── Capital Stack Simulator ──
+  'Total Sources':'Total funding from all sources — debt, equity, grants, and tax credits combined.',
+  'Senior Annual DS':'Annual debt service (principal + interest) on the senior/primary loan.',
+  'Mezz Annual DS':'Annual interest payment on mezzanine/subordinate debt — typically interest-only.',
+  'Total Annual DS':'Combined annual debt service across all loans.',
+  'Projected NOI':'Expected Net Operating Income used to calculate debt service coverage.',
+  'Investor Preferred':'The preferred return paid to equity investors before any profit split — typically 8-10% annually.',
+  'Sponsor Preferred':'The preferred return paid to the developer/sponsor on their invested equity.',
+  'Sponsor Promote':'Additional profit share earned by the sponsor for exceeding investor return targets — the upside incentive.',
+  'Investor Equity Multiple':'Total cash returned to the investor divided by their original investment. A 2.0x means they doubled their money.',
+  'Sponsor Equity Multiple':'Total cash returned to the sponsor divided by their investment. Includes promote if earned.',
+
+  // ── Restaurant Simulator ──
+  'Annual Covers':'Total number of meals served per year — seats × turns per day × operating days.',
+  'Food Revenue':'Annual revenue from food sales, based on average check per cover.',
+  'Beverage Revenue':'Annual revenue from drink sales — typically 25-35% of total revenue for full-service restaurants.',
+  'Total COGS':'Cost of Goods Sold — the raw cost of food and beverages. Target is 28-35% of revenue.',
+  'Gross Profit':'Revenue minus COGS — what\'s left to cover labor, overhead, and profit.',
+  'Total Labor':'Total annual payroll including benefits. Target is under 30-35% of revenue.',
+  'Labor %':'Labor costs as a percentage of total revenue. One of the most critical restaurant metrics — keep under 35%.',
+  'Occupancy Cost':'Rent or mortgage as a percentage of revenue. Target is 6-10% — higher means the space is too expensive.',
+  'Occupancy Cost %':'Rent as a percentage of total revenue. Target is 6-10% for restaurants — above 10% means the space may be too expensive.',
+  'Prime Cost (COGS + Labor)':'Food/beverage costs plus total labor — the two biggest expenses. Industry standard says keep this under 65% of revenue.',
+  'Prime Cost %':'COGS + Labor as a percentage of revenue. Under 60% is excellent, 60-65% is acceptable, over 65% is a red flag.',
+  'COGS %':'Cost of Goods Sold as a percentage of revenue. Blended food + beverage target is 28-35%.',
+  'Total Labor (with burden)':'All wages plus payroll taxes, workers comp, and benefits. The full cost of your team.',
+  'Payroll Tax & Benefits %':'Employer-side costs on top of wages — FICA, unemployment, workers comp, health insurance. Typically 18-25%.',
+  'Revenue Per Sq Ft':'Annual revenue divided by restaurant square footage. $300+/SF is strong, under $150 is a concern.',
+  'Breakeven Covers/Day':'The minimum number of guests per day needed to cover all costs. If your target covers exceed this, the concept is viable.',
+  'Payback Period':'How many months of positive cash flow it takes to recoup your startup investment. Under 24 months is strong.',
+  'Monthly Utilities':'Monthly electric, gas, water, and waste removal. Restaurants run higher than typical commercial — budget 3-5% of revenue.',
+  'Monthly Insurance':'Monthly cost for general liability, property, liquor liability, and workers comp insurance.',
+  'Marketing (% of Revenue)':'Marketing budget as a percentage of revenue. New restaurants typically spend 3-6%.',
+  'Misc Expenses (% of Revenue)':'Miscellaneous costs — POS fees, linen service, cleaning supplies, small equipment replacement.',
+  'Server Hours/Day':'Average hours each server works per operating day — typically 5-7 hours.',
+  'Cook Hours/Day':'Average hours each cook works per operating day — typically 8-10 hours.',
+  'Support Hours/Day':'Average hours each support staff member (dishwashers, hosts, bussers) works per day.',
+  'Manager Salary':'Annual salary per manager including any bonuses. Typically $45K-$75K depending on market.',
+  'Cushion':'The number of covers per day above your breakeven point — your margin of safety.',
+
+  // ── Deal Memo Builder Fields ──
+  'Project Type':'The category of development — affects which incentive programs apply and what benchmarks to use.',
+  'Estimated Timeline':'Projected time from project start to stabilized operations. Lenders use this to assess construction risk.',
+  'Jobs Created':'New permanent jobs resulting from the project — a key metric for EDA grants, NMTC, and CDBG funding.',
+  'Jobs Retained':'Existing jobs preserved by the project — important for grant applications showing community impact.',
+  'Senior Rate':'Annual interest rate on the senior/primary loan.',
+  'Senior Term':'Amortization period for the senior loan in years.',
+  'Mezz Rate':'Annual interest rate on mezzanine/subordinate debt — typically higher than senior debt (10-15%).',
+  'Going-In Cap Rate':'The cap rate at acquisition — Year 1 NOI divided by total cost. Shows initial unlevered return.',
+
+  // ── Exact label matches for NumInput fields ──
+  'Monthly Lease Payment':'Your current or projected monthly lease payment for equivalent commercial space.',
+  'Annual Lease Increase':'Yearly rent escalation built into the lease — typically 2-4% annually.',
+  'Property Purchase Price':'The asking or negotiated price to buy the commercial property.',
+  'Loan Interest Rate':'Annual interest rate on the loan. Even small rate changes significantly impact monthly payments and DSCR.',
+  'Annual Insurance':'Annual property insurance premium — required by lenders, protects against loss.',
+  'Annual Maintenance (% of value)':'Annual repair and maintenance budget as a percentage of property value. Budget 1-2% for older buildings.',
+  'Rehab/Renovation':'Budget for renovation, rehabilitation, or improvements to the building.',
+  'Closing Costs':'Transaction costs at purchase — title insurance, attorney fees, recording fees, transfer taxes.',
+  'Monthly Rent (stabilized)':'Total gross monthly rent at full stabilized occupancy from all units.',
+  'Stabilized Vacancy':'Expected long-term vacancy rate once the property is fully leased up. Typically 5-10%.',
+  'Year 1 Occupancy':'First-year occupancy during lease-up. Often lower than stabilized — be conservative.',
+  'Operating Expenses (monthly)':'Monthly costs to operate the property — insurance, taxes, maintenance, management, utilities.',
+  'Annual NOI Growth':'Projected annual increase in NOI driven by rent escalations and expense control.',
+  'Interest Rate':'Annual interest rate on the loan.',
+  'Total Project Cost':'The sum of all development costs — acquisition, hard costs, soft costs, financing, and contingency.',
+  'Investor Equity':'Cash contributed by outside equity investors in exchange for ownership stake and preferred returns.',
+  'Sponsor Equity':'Cash contributed by the developer/sponsor. Demonstrates commitment — lenders want skin in the game.',
+  'Preferred Return':'Annual return paid to investors before any profit split — typically 8-10%. Acts as a floor on investor returns.',
+  'Projected Total Profit':'Estimated total profit from the deal — used to calculate the waterfall distribution.',
+  'Projected Annual NOI':'Expected annual Net Operating Income — used to calculate DSCR against total debt service.',
+
+  // ── Restaurant Simulator ──
+  'Restaurant Size (sq ft)':'Total square footage of the restaurant space — affects buildout costs and revenue capacity.',
+  'Number of Seats':'Total seating capacity — directly drives revenue potential through daily covers.',
+  'Buildout Cost':'Total tenant improvement cost to build out the restaurant space — kitchen, dining, bar, finishes.',
+  'Equipment Cost':'Kitchen equipment, POS systems, furniture, and fixtures.',
+  'Initial Inventory':'Starting food, beverage, and supply inventory before opening.',
+  'Permits & Licenses':'Liquor license, health permits, fire inspection, occupancy permits, business license.',
+  'Average Check Size':'Average revenue per guest including food and beverages. Key driver of total revenue.',
+  'Covers Per Day':'Number of guests served per day — seats × table turns.',
+  'Days Open Per Week':'Operating days per week — affects annual revenue and staffing costs.',
+  'Food Cost %':'Cost of food ingredients as a percentage of food revenue. Target 28-35%.',
+  'Beverage Cost %':'Cost of beverage ingredients as a percentage of beverage revenue. Target 18-24%.',
+  'Beverage Sales Mix %':'Percentage of total revenue from beverages. Higher mix = better margins.',
+
+  // ── Business P&L Simulator ──
+  'Year 1 Revenue':'Projected gross revenue for the first year of operations.',
+  'Annual Revenue Growth':'Expected yearly revenue increase based on market growth and sales expansion.',
+  'Cost of Goods Sold':'Direct costs of producing goods or services, expressed as a percentage of revenue.',
+  'Year 1 Salaries':'Total annual payroll for all employees in the first year.',
+  'Annual Salary Increase':'Expected annual payroll increase — raises, new hires, benefits growth.',
+  'Year 1 Rent':'Annual lease cost for business space in the first year.',
+  'Annual Rent Increase':'Yearly lease escalation — check your lease for the exact percentage.',
+  'Marketing Budget (%)':'Marketing spend as a percentage of revenue. Typical range is 5-15% depending on growth stage.',
+  'Year 1 Utilities':'Annual utility costs — electric, gas, water, internet, phone.',
+  'Year 1 Insurance':'Annual business insurance — general liability, property, workers comp.',
+  'Year 1 Other Operating Expenses':'Miscellaneous operating costs — office supplies, software, professional services.',
+  'Initial Capital Investment':'Upfront capital expenditure to start or acquire the business.',
+
+  // ── Sources & Uses Simulator ──
+  'Acquisition/Land Cost':'Purchase price for the property or land.',
+  'Hard Costs (Construction)':'Direct construction costs — general contractor, materials, subcontractors, labor.',
+  'Owner/Sponsor Equity':'Developer\'s own cash invested in the deal. Demonstrates commitment to lenders and investors.',
+
+  // ── 10-Year Cash Flow Simulator ──
+  'Monthly Gross Rent':'Total monthly rent from all tenants at full occupancy.',
+  'Monthly Operating Expenses':'Monthly property operating costs — taxes, insurance, maintenance, management.',
+  'Annual Opex Growth':'Projected annual increase in operating expenses — typically 2-3%.',
+  'Annual Rent Growth':'Projected annual rent escalation based on lease terms and market conditions.',
+  'Loan Term (years)':'The loan amortization period in years. Longer terms = lower monthly payments but more total interest.',
+
+  // ── Deal Screener ──
+  'Total Monthly Rent':'Combined monthly rental income from all tenants or units.',
+  'Annual Operating Expenses':'Total annual costs to run the property, excluding debt service.',
+  'Loan-to-Value %':'The loan amount as a percentage of property value. Banks typically lend 65-80% LTV.',
+  'Build-Out $/SF':'Construction cost per square foot for tenant improvements. Varies widely by use type.',
+  'Occupancy Cost %':'Rent as a percentage of gross revenue — key metric for restaurants and retail. Target 6-10%.',
+  'OpEx Ratio':'Operating expenses as a percentage of effective gross income.',
+
+  // ── Deal Memo builder ──
+  'Total Square Footage':'Total square footage of the project — used to calculate cost/SF and rent/SF.',
+  'Residential Units':'Number of residential units in the project — relevant for LIHTC and mixed-use developments.',
+  'Soft Costs (A&E, Legal)':'Architecture, engineering, legal, permitting, accounting, and other professional services.',
 };
 
 function InfoTip({label}) {
@@ -1295,7 +1481,7 @@ function NumInput({label, value, onChange, prefix='$', suffix='', step=1000, hin
 
   return (
     <div className="input-group">
-      <label className="input-label">{label}</label>
+      <label className="input-label">{label}<InfoTip label={label}/></label>
       <div className="input-row">
         {prefix && <span className="input-prefix">{prefix}</span>}
         <input
@@ -1317,7 +1503,7 @@ function NumInput({label, value, onChange, prefix='$', suffix='', step=1000, hin
 }
 
 function ResultRow({label, value, className=''}) {
-  return <div className="result-item"><span className="result-label">{label}</span><span className={`result-value ${className}`}>{value}</span></div>;
+  return <div className="result-item"><span className="result-label">{label}<InfoTip label={label}/></span><span className={`result-value ${className}`}>{value}</span></div>;
 }
 
 // FIXED: Lease vs Own — includes ownership costs, proper equity calc with principal paydown
@@ -1703,7 +1889,8 @@ function CapitalStackSim() {
 
 // Restaurant Builder
 function RestaurantSim() {
-  const [v, setV] = useState({sqft:2500,seats:60,buildout:150000,equipment:75000,inventory:15000,permits:8000,rent:5000,avgCheck:35,covers:80,daysOpen:6,foodCost:30,bevCost:22,bevMix:20,managers:1,mgrSalary:55000,servers:4,serverWage:5,cooks:3,cookWage:18,support:2,supportWage:14});
+  const [restaurantName, setRestaurantName] = useState('');
+  const [v, setV] = useState({sqft:2500,seats:60,buildout:150000,equipment:75000,inventory:15000,permits:8000,rent:5000,avgCheck:35,covers:80,daysOpen:6,foodCost:30,bevCost:22,bevMix:20,managers:1,mgrSalary:55000,servers:4,serverWage:5,serverHrs:6,cooks:3,cookWage:18,cookHrs:8,support:2,supportWage:14,supportHrs:5,payrollBurden:20,utilities:3000,insurance:1000,marketing:3,miscPct:2});
   const [results, setResults] = useState(null);
   const set = (k,val) => setV({...v,[k]:val});
   const run = () => {
@@ -1716,80 +1903,144 @@ function RestaurantSim() {
     const foodCOGS = foodRevenue * v.foodCost/100;
     const bevCOGS = bevRevenue * v.bevCost/100;
     const totalCOGS = foodCOGS + bevCOGS;
+    const cogsPct = totalRevenue > 0 ? (totalCOGS / totalRevenue) * 100 : 0;
     const grossProfit = totalRevenue - totalCOGS;
     const mgrCost = v.managers * v.mgrSalary;
-    const serverHrs = v.servers * 6 * v.daysOpen * weeksPerYear;
+    const serverHrs = v.servers * v.serverHrs * v.daysOpen * weeksPerYear;
     const serverCost = serverHrs * v.serverWage;
-    const cookHrs = v.cooks * 8 * v.daysOpen * weeksPerYear;
+    const cookHrs = v.cooks * v.cookHrs * v.daysOpen * weeksPerYear;
     const cookCost = cookHrs * v.cookWage;
-    const supportHrs = v.support * 5 * v.daysOpen * weeksPerYear;
+    const supportHrs = v.support * v.supportHrs * v.daysOpen * weeksPerYear;
     const supportCost = supportHrs * v.supportWage;
-    const totalLabor = mgrCost + serverCost + cookCost + supportCost;
-    const laborPct = (totalLabor / totalRevenue) * 100;
+    const baseLaborCost = mgrCost + serverCost + cookCost + supportCost;
+    const payrollTaxes = baseLaborCost * v.payrollBurden / 100;
+    const totalLabor = baseLaborCost + payrollTaxes;
+    const laborPct = totalRevenue > 0 ? (totalLabor / totalRevenue) * 100 : 0;
+    const primeCost = totalCOGS + totalLabor;
+    const primeCostPct = totalRevenue > 0 ? (primeCost / totalRevenue) * 100 : 0;
     const annualRent = v.rent * 12;
-    const utilities = totalRevenue * 0.04;
-    const insurance = 12000;
-    const marketing = totalRevenue * 0.03;
-    const misc = totalRevenue * 0.02;
-    const totalOpex = annualRent + utilities + insurance + marketing + misc;
+    const annualUtilities = v.utilities * 12;
+    const annualInsurance = v.insurance * 12;
+    const marketingCost = totalRevenue * v.marketing / 100;
+    const miscCost = totalRevenue * v.miscPct / 100;
+    const totalOpex = annualRent + annualUtilities + annualInsurance + marketingCost + miscCost;
+    const occupancyCost = totalRevenue > 0 ? (annualRent / totalRevenue) * 100 : 0;
+    const revPerSF = v.sqft > 0 ? totalRevenue / v.sqft : 0;
     const netIncome = grossProfit - totalLabor - totalOpex;
-    const netMargin = (netIncome / totalRevenue) * 100;
+    const netMargin = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
     const monthlyCF = netIncome / 12;
-    setResults({startupCost,totalRevenue,foodRevenue,bevRevenue,totalCOGS,grossProfit,totalLabor,laborPct,totalOpex,netIncome,netMargin,monthlyCF,annualCovers});
+    // Breakeven: find covers/day where netIncome = 0
+    // Revenue per cover = avgCheck, variable cost per cover = avgCheck * blended COGS%
+    // Fixed costs = totalLabor + totalOpex (approx)
+    const fixedCosts = totalLabor + totalOpex;
+    const revenuePerCover = v.avgCheck;
+    const variableCostPerCover = v.avgCheck * (cogsPct / 100);
+    const contributionPerCover = revenuePerCover - variableCostPerCover;
+    const annualBreakevenCovers = contributionPerCover > 0 ? Math.ceil(fixedCosts / contributionPerCover) : 0;
+    const breakevenCoversPerDay = v.daysOpen > 0 ? Math.ceil(annualBreakevenCovers / (v.daysOpen * weeksPerYear)) : 0;
+    const paybackMonths = monthlyCF > 0 ? Math.ceil(startupCost / monthlyCF) : 0;
+    setResults({startupCost,totalRevenue,foodRevenue,bevRevenue,totalCOGS,cogsPct,grossProfit,totalLabor,laborPct,primeCost,primeCostPct,totalOpex,annualRent,occupancyCost,revPerSF,netIncome,netMargin,monthlyCF,annualCovers,breakevenCoversPerDay,paybackMonths,annualUtilities,annualInsurance,marketingCost,miscCost,payrollTaxes});
   };
   return (
     <div className="sim-page">
       <div className="sim-inputs" style={{maxHeight:'70vh',overflowY:'auto'}}>
         <h3 style={{marginBottom:'1.25rem',fontFamily:'Inter,sans-serif',fontWeight:600,fontSize:'0.95rem'}}><Icon type="layers" size={18}/> Inputs</h3>
-        <NumInput label="Restaurant Size (sq ft)" value={v.sqft} onChange={val=>set('sqft',val)} prefix="" suffix="sq ft" step={100}/>
-        <NumInput label="Number of Seats" value={v.seats} onChange={val=>set('seats',val)} prefix="" suffix="" step={5}/>
+
+        <div className="input-group" style={{margin:'0 0 0.75rem 0'}}>
+          <label className="input-label">Restaurant Name</label>
+          <input className="input input-sm" type="text" placeholder="e.g. The Corner Bistro" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)}/>
+        </div>
+
+        <div className="result-section-title" style={{marginTop:0}}>Startup Costs</div>
         <NumInput label="Buildout Cost" value={v.buildout} onChange={val=>set('buildout',val)}/>
         <NumInput label="Equipment Cost" value={v.equipment} onChange={val=>set('equipment',val)}/>
         <NumInput label="Initial Inventory" value={v.inventory} onChange={val=>set('inventory',val)} step={1000}/>
         <NumInput label="Permits & Licenses" value={v.permits} onChange={val=>set('permits',val)} step={1000}/>
+
+        <div className="result-section-title">Space & Revenue</div>
+        <NumInput label="Restaurant Size (sq ft)" value={v.sqft} onChange={val=>set('sqft',val)} prefix="" suffix="sq ft" step={100}/>
+        <NumInput label="Number of Seats" value={v.seats} onChange={val=>set('seats',val)} prefix="" suffix="" step={5}/>
         <NumInput label="Monthly Rent" value={v.rent} onChange={val=>set('rent',val)} step={500}/>
         <NumInput label="Average Check Size" value={v.avgCheck} onChange={val=>set('avgCheck',val)} step={5}/>
         <NumInput label="Covers Per Day" value={v.covers} onChange={val=>set('covers',val)} prefix="" suffix="" step={5}/>
         <NumInput label="Days Open Per Week" value={v.daysOpen} onChange={val=>set('daysOpen',val)} prefix="" suffix="" step={1}/>
+
+        <div className="result-section-title">Food & Beverage</div>
         <NumInput label="Food Cost %" value={v.foodCost} onChange={val=>set('foodCost',val)} prefix="" suffix="%" step={1}/>
         <NumInput label="Beverage Cost %" value={v.bevCost} onChange={val=>set('bevCost',val)} prefix="" suffix="%" step={1}/>
         <NumInput label="Beverage Sales Mix %" value={v.bevMix} onChange={val=>set('bevMix',val)} prefix="" suffix="%" step={5}/>
+
+        <div className="result-section-title">Staffing</div>
         <NumInput label="Managers" value={v.managers} onChange={val=>set('managers',val)} prefix="" suffix="" step={1}/>
         <NumInput label="Manager Salary" value={v.mgrSalary} onChange={val=>set('mgrSalary',val)} step={5000}/>
         <NumInput label="Servers" value={v.servers} onChange={val=>set('servers',val)} prefix="" suffix="" step={1}/>
         <NumInput label="Server Wage/Hr" value={v.serverWage} onChange={val=>set('serverWage',val)} step={1}/>
+        <NumInput label="Server Hours/Day" value={v.serverHrs} onChange={val=>set('serverHrs',val)} prefix="" suffix="hrs" step={1}/>
         <NumInput label="Cooks" value={v.cooks} onChange={val=>set('cooks',val)} prefix="" suffix="" step={1}/>
         <NumInput label="Cook Wage/Hr" value={v.cookWage} onChange={val=>set('cookWage',val)} step={1}/>
+        <NumInput label="Cook Hours/Day" value={v.cookHrs} onChange={val=>set('cookHrs',val)} prefix="" suffix="hrs" step={1}/>
         <NumInput label="Support Staff" value={v.support} onChange={val=>set('support',val)} prefix="" suffix="" step={1}/>
         <NumInput label="Support Wage/Hr" value={v.supportWage} onChange={val=>set('supportWage',val)} step={1}/>
+        <NumInput label="Support Hours/Day" value={v.supportHrs} onChange={val=>set('supportHrs',val)} prefix="" suffix="hrs" step={1}/>
+        <NumInput label="Payroll Tax & Benefits %" value={v.payrollBurden} onChange={val=>set('payrollBurden',val)} prefix="" suffix="%" step={1}/>
+
+        <div className="result-section-title">Operating Overhead</div>
+        <NumInput label="Monthly Utilities" value={v.utilities} onChange={val=>set('utilities',val)} step={250}/>
+        <NumInput label="Monthly Insurance" value={v.insurance} onChange={val=>set('insurance',val)} step={250}/>
+        <NumInput label="Marketing (% of Revenue)" value={v.marketing} onChange={val=>set('marketing',val)} prefix="" suffix="%" step={1}/>
+        <NumInput label="Misc Expenses (% of Revenue)" value={v.miscPct} onChange={val=>set('miscPct',val)} prefix="" suffix="%" step={1}/>
+
         <button className="btn-gold" style={{width:'100%',marginTop:'0.75rem'}} onClick={run}><Icon type="play" size={16}/> Run Simulation</button>
       </div>
       <div className="sim-results">
         {!results ? <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}>Run the simulation to see results</div> : (
           <div>
-            <div className="result-section-title">Startup</div>
+            <div className="result-section-title">Startup Investment</div>
             <ResultRow label="Total Startup Cost" value={fmt(results.startupCost)}/>
+            <ResultRow label="Payback Period" value={results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A — not profitable'} className={results.paybackMonths > 0 && results.paybackMonths <= 24 ? 'result-good' : results.paybackMonths > 0 ? 'result-warn' : 'result-bad'}/>
             <div className="result-section-title">Revenue</div>
             <ResultRow label="Annual Covers" value={results.annualCovers.toLocaleString()}/>
             <ResultRow label="Food Revenue" value={fmt(results.foodRevenue)}/>
             <ResultRow label="Beverage Revenue" value={fmt(results.bevRevenue)}/>
             <ResultRow label="Total Revenue" value={fmt(results.totalRevenue)} className="result-good"/>
-            <div className="result-section-title">Costs</div>
+            <ResultRow label="Revenue Per Sq Ft" value={fmt(results.revPerSF)} className={results.revPerSF >= 300 ? 'result-good' : results.revPerSF >= 150 ? 'result-warn' : 'result-bad'}/>
+            <div className="result-section-title">Cost of Goods</div>
             <ResultRow label="Total COGS" value={fmt(results.totalCOGS)}/>
-            <ResultRow label="Gross Profit" value={fmt(results.grossProfit)}/>
-            <ResultRow label="Total Labor" value={fmt(results.totalLabor)}/>
-            <ResultRow label="Labor %" value={fmtPct(results.laborPct)} className={results.laborPct < 35 ? 'result-good' : results.laborPct < 40 ? 'result-warn' : 'result-bad'}/>
+            <ResultRow label="COGS %" value={fmtPct(results.cogsPct)} className={results.cogsPct <= 32 ? 'result-good' : results.cogsPct <= 38 ? 'result-warn' : 'result-bad'}/>
+            <ResultRow label="Gross Profit" value={fmt(results.grossProfit)} className="result-good"/>
+            <div className="result-section-title">Labor</div>
+            <ResultRow label="Total Labor (with burden)" value={fmt(results.totalLabor)}/>
+            <ResultRow label="Payroll Taxes & Benefits" value={fmt(results.payrollTaxes)}/>
+            <ResultRow label="Labor %" value={fmtPct(results.laborPct)} className={results.laborPct < 30 ? 'result-good' : results.laborPct < 35 ? 'result-warn' : 'result-bad'}/>
+            <div className="result-section-title">Prime Cost</div>
+            <ResultRow label="Prime Cost (COGS + Labor)" value={fmt(results.primeCost)}/>
+            <ResultRow label="Prime Cost %" value={fmtPct(results.primeCostPct)} className={results.primeCostPct <= 60 ? 'result-good' : results.primeCostPct <= 65 ? 'result-warn' : 'result-bad'}/>
+            <div className="result-section-title">Operating Expenses</div>
+            <ResultRow label="Rent" value={fmt(results.annualRent)}/>
+            <ResultRow label="Occupancy Cost %" value={fmtPct(results.occupancyCost)} className={results.occupancyCost <= 8 ? 'result-good' : results.occupancyCost <= 12 ? 'result-warn' : 'result-bad'}/>
+            <ResultRow label="Utilities" value={fmt(results.annualUtilities)}/>
+            <ResultRow label="Insurance" value={fmt(results.annualInsurance)}/>
+            <ResultRow label="Marketing" value={fmt(results.marketingCost)}/>
+            <ResultRow label="Miscellaneous" value={fmt(results.miscCost)}/>
             <ResultRow label="Total Operating Expenses" value={fmt(results.totalOpex)}/>
             <div className="result-section-title">Bottom Line</div>
             <ResultRow label="Net Income" value={fmt(results.netIncome)} className={results.netIncome > 0 ? 'result-good' : 'result-bad'}/>
             <ResultRow label="Net Margin" value={fmtPct(results.netMargin)} className={results.netMargin > 10 ? 'result-good' : results.netMargin > 0 ? 'result-warn' : 'result-bad'}/>
             <ResultRow label="Monthly Cash Flow" value={fmt(results.monthlyCF)} className={results.monthlyCF > 0 ? 'result-good' : 'result-bad'}/>
+            <div className="result-section-title">Breakeven</div>
+            <ResultRow label="Breakeven Covers/Day" value={results.breakevenCoversPerDay > 0 ? results.breakevenCoversPerDay : 'N/A'} className={results.breakevenCoversPerDay > 0 && results.breakevenCoversPerDay <= v.covers ? 'result-good' : 'result-bad'}/>
+            <ResultRow label="Your Target Covers/Day" value={v.covers}/>
+            <ResultRow label="Cushion" value={results.breakevenCoversPerDay > 0 && v.covers > results.breakevenCoversPerDay ? (v.covers - results.breakevenCoversPerDay) + ' covers/day above breakeven' : 'Below breakeven'} className={v.covers > results.breakevenCoversPerDay ? 'result-good' : 'result-bad'}/>
               <DealHealthBadge health={getDealHealth('restaurant', results)}/>
-              <ExportBar title="Restaurant Business Plan" health={getDealHealth('restaurant', results)} rows={[
-                {section:'Startup'},{label:'Total Startup Cost',value:fmt(results.startupCost)},
-                {section:'Revenue'},{label:'Annual Covers',value:results.annualCovers.toLocaleString()},{label:'Food Revenue',value:fmt(results.foodRevenue)},{label:'Beverage Revenue',value:fmt(results.bevRevenue)},{label:'Total Revenue',value:fmt(results.totalRevenue)},
-                {section:'Costs'},{label:'Total COGS',value:fmt(results.totalCOGS)},{label:'Gross Profit',value:fmt(results.grossProfit)},{label:'Total Labor',value:fmt(results.totalLabor)},{label:'Labor %',value:fmtPct(results.laborPct)},{label:'Total Operating Expenses',value:fmt(results.totalOpex)},
-                {section:'Bottom Line'},{label:'Net Income',value:fmt(results.netIncome)},{label:'Net Margin',value:fmtPct(results.netMargin)},{label:'Monthly Cash Flow',value:fmt(results.monthlyCF)}
+              <ExportBar title={(restaurantName || 'Restaurant') + ' — Business Plan'} health={getDealHealth('restaurant', results)} rows={[
+                {section:'Startup'},{label:'Total Startup Cost',value:fmt(results.startupCost)},{label:'Payback Period',value:results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A'},
+                {section:'Revenue'},{label:'Annual Covers',value:results.annualCovers.toLocaleString()},{label:'Food Revenue',value:fmt(results.foodRevenue)},{label:'Beverage Revenue',value:fmt(results.bevRevenue)},{label:'Total Revenue',value:fmt(results.totalRevenue)},{label:'Revenue Per Sq Ft',value:fmt(results.revPerSF)},
+                {section:'Cost of Goods'},{label:'Total COGS',value:fmt(results.totalCOGS)},{label:'COGS %',value:fmtPct(results.cogsPct)},{label:'Gross Profit',value:fmt(results.grossProfit)},
+                {section:'Labor'},{label:'Total Labor',value:fmt(results.totalLabor)},{label:'Labor %',value:fmtPct(results.laborPct)},
+                {section:'Prime Cost'},{label:'Prime Cost (COGS + Labor)',value:fmt(results.primeCost)},{label:'Prime Cost %',value:fmtPct(results.primeCostPct)},
+                {section:'Operating Expenses'},{label:'Rent',value:fmt(results.annualRent)},{label:'Occupancy Cost %',value:fmtPct(results.occupancyCost)},{label:'Utilities',value:fmt(results.annualUtilities)},{label:'Insurance',value:fmt(results.annualInsurance)},{label:'Marketing',value:fmt(results.marketingCost)},{label:'Total Operating Expenses',value:fmt(results.totalOpex)},
+                {section:'Bottom Line'},{label:'Net Income',value:fmt(results.netIncome)},{label:'Net Margin',value:fmtPct(results.netMargin)},{label:'Monthly Cash Flow',value:fmt(results.monthlyCF)},
+                {section:'Breakeven'},{label:'Breakeven Covers/Day',value:results.breakevenCoversPerDay},{label:'Your Target Covers/Day',value:v.covers}
               ]}/>
           </div>
         )}
