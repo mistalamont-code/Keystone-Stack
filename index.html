@@ -990,10 +990,335 @@ function exportToExcel(title, rows, healthData) {
   data.push(['',''],['Keystone Stack \u2014 Capital Stacking \u2022 Deal Structuring \u2022 Development Finance','']);
   data.push(['Disclaimer: Estimates are for planning purposes only and do not constitute financial, legal, or tax advice.','']);
   const ws = XLSX.utils.aoa_to_sheet(data); ws['!cols'] = [{wch:40},{wch:25}];
-  // Bold header styling
   if (ws['A1']) ws['A1'].s = {font:{bold:true,sz:14}};
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Results');
   XLSX.writeFile(wb, title.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase()+'.xlsx');
+}
+
+// ─── FORMULA-DRIVEN EXCEL EXPORTERS ──────────────────────────────────────
+// Helper: set a cell on a worksheet with value and optional formula
+function xlsSet(ws, ref, value, opts = {}) {
+  const cell = { v: value, t: typeof value === 'number' ? 'n' : 's' };
+  if (opts.f) cell.f = opts.f;
+  if (opts.z) cell.z = opts.z;
+  ws[ref] = cell;
+  // Update sheet range
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+  const c = XLSX.utils.decode_cell(ref);
+  if (c.r > range.e.r) range.e.r = c.r;
+  if (c.c > range.e.c) range.e.c = c.c;
+  ws['!ref'] = XLSX.utils.encode_range(range);
+}
+
+// ── Capital Stack Formula Export ──
+function exportCapitalStackFormula(v) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([['KEYSTONE STACK — Capital Stack Analysis','',''],['Generated: ' + new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),'','']]);
+  ws['!cols'] = [{wch:30},{wch:18},{wch:18},{wch:18}];
+  // Inputs section
+  xlsSet(ws,'A4','ASSUMPTIONS (edit yellow cells)');
+  xlsSet(ws,'A5','Total Project Cost'); xlsSet(ws,'B5',v.totalCost);
+  xlsSet(ws,'A6','Senior Debt'); xlsSet(ws,'B6',v.seniorDebt);
+  xlsSet(ws,'A7','Senior Rate (%)'); xlsSet(ws,'B7',v.seniorRate);
+  xlsSet(ws,'A8','Mezzanine Debt'); xlsSet(ws,'B8',v.mezzDebt);
+  xlsSet(ws,'A9','Mezz Rate (%)'); xlsSet(ws,'B9',v.mezzRate);
+  xlsSet(ws,'A10','Tax Credit Equity'); xlsSet(ws,'B10',v.taxCreditEquity);
+  xlsSet(ws,'A11','Grant Funds'); xlsSet(ws,'B11',v.grantFunds);
+  xlsSet(ws,'A12','Investor Equity'); xlsSet(ws,'B12',v.investorEq);
+  xlsSet(ws,'A13','Sponsor Equity'); xlsSet(ws,'B13',v.sponsorEq);
+  xlsSet(ws,'A14','Preferred Return (%)'); xlsSet(ws,'B14',v.prefReturn);
+  xlsSet(ws,'A15','Sponsor Promote (%)'); xlsSet(ws,'B15',v.promote);
+  xlsSet(ws,'A16','Projected Total Profit'); xlsSet(ws,'B16',v.totalProfit);
+  xlsSet(ws,'A17','Projected Annual NOI'); xlsSet(ws,'B17',v.projectedNOI);
+  // Calculated section
+  xlsSet(ws,'A19','CAPITAL STACK CALCULATIONS');
+  xlsSet(ws,'A20','Total Equity'); xlsSet(ws,'B20',0,{f:'B12+B13'});
+  xlsSet(ws,'A21','Total Sources'); xlsSet(ws,'B21',0,{f:'B6+B8+B10+B11+B12+B13'});
+  xlsSet(ws,'A22','Funding Gap / Surplus'); xlsSet(ws,'B22',0,{f:'B5-B21'});
+  xlsSet(ws,'A23','Senior LTC (%)'); xlsSet(ws,'B23',0,{f:'IF(B5>0,B6/B5*100,0)'});
+  // Debt Service
+  xlsSet(ws,'A25','DEBT SERVICE');
+  xlsSet(ws,'A26','Senior Annual DS'); xlsSet(ws,'B26',0,{f:'IF(AND(B6>0,B7>0),-PMT(B7/100/12,300,B6)*12,0)'});
+  xlsSet(ws,'A27','Mezz Annual DS (IO)'); xlsSet(ws,'B27',0,{f:'B8*B9/100'});
+  xlsSet(ws,'A28','Total Annual DS'); xlsSet(ws,'B28',0,{f:'B26+B27'});
+  xlsSet(ws,'A29','DSCR'); xlsSet(ws,'B29',0,{f:'IF(B28>0,B17/B28,0)'});
+  xlsSet(ws,'A30','Cash Flow After DS'); xlsSet(ws,'B30',0,{f:'B17-B28'});
+  // Waterfall
+  xlsSet(ws,'A32','WATERFALL DISTRIBUTION');
+  xlsSet(ws,'A33','Investor Preferred'); xlsSet(ws,'B33',0,{f:'B12*B14/100'});
+  xlsSet(ws,'A34','Sponsor Preferred'); xlsSet(ws,'B34',0,{f:'B13*B14/100'});
+  xlsSet(ws,'A35','Total Preferred'); xlsSet(ws,'B35',0,{f:'B33+B34'});
+  xlsSet(ws,'A36','Profit After Pref'); xlsSet(ws,'B36',0,{f:'MAX(0,B16-B35)'});
+  xlsSet(ws,'A37','Sponsor Promote'); xlsSet(ws,'B37',0,{f:'B36*B15/100'});
+  xlsSet(ws,'A38','Remaining Pro-Rata'); xlsSet(ws,'B38',0,{f:'B36-B37'});
+  xlsSet(ws,'A39','Investor Pro-Rata Share'); xlsSet(ws,'B39',0,{f:'IF(B20>0,B38*(B12/B20),0)'});
+  xlsSet(ws,'A40','Sponsor Pro-Rata Share'); xlsSet(ws,'B40',0,{f:'IF(B20>0,B38*(B13/B20),0)'});
+  // Returns
+  xlsSet(ws,'A42','RETURNS');
+  xlsSet(ws,'A43','Investor Total Return'); xlsSet(ws,'B43',0,{f:'B33+B39'});
+  xlsSet(ws,'A44','Investor Equity Multiple'); xlsSet(ws,'B44',0,{f:'IF(B12>0,(B12+B43)/B12,0)'});
+  xlsSet(ws,'A45','Sponsor Total Return'); xlsSet(ws,'B45',0,{f:'B34+B37+B40'});
+  xlsSet(ws,'A46','Sponsor Equity Multiple'); xlsSet(ws,'B46',0,{f:'IF(B13>0,(B13+B45)/B13,0)'});
+  xlsSet(ws,'A48','Disclaimer: Estimates for planning only. Not financial, legal, or tax advice.');
+  XLSX.utils.book_append_sheet(wb, ws, 'Capital Stack');
+  XLSX.writeFile(wb, 'capital-stack-analysis.xlsx');
+}
+
+// ── Sources & Uses Formula Export ──
+function exportSourcesUsesFormula(v) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([['KEYSTONE STACK — Sources & Uses','',''],['Generated: ' + new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),'','']]);
+  ws['!cols'] = [{wch:35},{wch:18},{wch:14}];
+  xlsSet(ws,'A4','USES OF FUNDS (edit yellow cells)');
+  xlsSet(ws,'A5','Acquisition / Land Cost'); xlsSet(ws,'B5',v.acquisitionCost);
+  xlsSet(ws,'A6','Hard Costs (Construction)'); xlsSet(ws,'B6',v.hardCosts);
+  xlsSet(ws,'A7','Soft Costs'); xlsSet(ws,'B7',v.softCosts);
+  xlsSet(ws,'A8','Financing Costs'); xlsSet(ws,'B8',v.financingCosts);
+  xlsSet(ws,'A9','Contingency'); xlsSet(ws,'B9',v.contingency);
+  xlsSet(ws,'A10','Total Uses'); xlsSet(ws,'B10',0,{f:'SUM(B5:B9)'});
+  xlsSet(ws,'C5','% of Total'); xlsSet(ws,'C6',0,{f:'IF(B$10>0,B5/B$10,0)',z:'0.0%'});
+  xlsSet(ws,'C7',0,{f:'IF(B$10>0,B6/B$10,0)',z:'0.0%'}); xlsSet(ws,'C8',0,{f:'IF(B$10>0,B7/B$10,0)',z:'0.0%'});
+  xlsSet(ws,'C9',0,{f:'IF(B$10>0,B8/B$10,0)',z:'0.0%'}); xlsSet(ws,'C10',0,{f:'IF(B$10>0,B9/B$10,0)',z:'0.0%'});
+  // Sources
+  xlsSet(ws,'A12','SOURCES OF FUNDS');
+  xlsSet(ws,'A13','Senior Debt'); xlsSet(ws,'B13',v.seniorDebt);
+  xlsSet(ws,'A14','Tax Credit Equity'); xlsSet(ws,'B14',v.taxCreditEquity);
+  xlsSet(ws,'A15','Grant Funds'); xlsSet(ws,'B15',v.grantFunds);
+  xlsSet(ws,'A16','Owner / Sponsor Equity'); xlsSet(ws,'B16',v.ownerEquity);
+  xlsSet(ws,'A17','Total Sources'); xlsSet(ws,'B17',0,{f:'SUM(B13:B16)'});
+  xlsSet(ws,'C13','% of Total'); xlsSet(ws,'C14',0,{f:'IF(B$10>0,B13/B$10,0)',z:'0.0%'});
+  xlsSet(ws,'C15',0,{f:'IF(B$10>0,B14/B$10,0)',z:'0.0%'}); xlsSet(ws,'C16',0,{f:'IF(B$10>0,B15/B$10,0)',z:'0.0%'});
+  xlsSet(ws,'C17',0,{f:'IF(B$10>0,B16/B$10,0)',z:'0.0%'});
+  // Gap
+  xlsSet(ws,'A19','GAP ANALYSIS');
+  xlsSet(ws,'A20','Funding Gap (+) / Surplus (-)'); xlsSet(ws,'B20',0,{f:'B10-B17'});
+  xlsSet(ws,'A21','Balanced?'); xlsSet(ws,'B21','',{f:'IF(B20=0,"YES — Balanced",IF(B20>0,"NO — Gap of "&TEXT(B20,"$#,##0"),"NO — Surplus of "&TEXT(ABS(B20),"$#,##0")))'});
+  // Ratios
+  xlsSet(ws,'A23','CAPITAL STRUCTURE');
+  xlsSet(ws,'A24','Debt-to-Total'); xlsSet(ws,'B24',0,{f:'IF(B10>0,B13/B10,0)',z:'0.0%'});
+  xlsSet(ws,'A25','Equity-to-Total'); xlsSet(ws,'B25',0,{f:'IF(B10>0,B16/B10,0)',z:'0.0%'});
+  xlsSet(ws,'A26','Tax Credit Equity %'); xlsSet(ws,'B26',0,{f:'IF(B10>0,B14/B10,0)',z:'0.0%'});
+  xlsSet(ws,'A27','Grant Funds %'); xlsSet(ws,'B27',0,{f:'IF(B10>0,B15/B10,0)',z:'0.0%'});
+  xlsSet(ws,'A28','Contingency % of Hard Costs'); xlsSet(ws,'B28',0,{f:'IF(B6>0,B9/B6,0)',z:'0.0%'});
+  xlsSet(ws,'A30','Disclaimer: Estimates for planning only. Not financial, legal, or tax advice.');
+  XLSX.utils.book_append_sheet(wb, ws, 'Sources & Uses');
+  XLSX.writeFile(wb, 'sources-and-uses.xlsx');
+}
+
+// ── Pro Forma (Business P&L) Formula Export ──
+function exportProFormaFormula(v) {
+  const wb = XLSX.utils.book_new();
+  // Assumptions tab
+  const wsA = XLSX.utils.aoa_to_sheet([['KEYSTONE STACK — Business P&L Pro Forma',''],['','']]);
+  wsA['!cols'] = [{wch:30},{wch:18}];
+  xlsSet(wsA,'A3','ASSUMPTIONS'); xlsSet(wsA,'A4','Year 1 Revenue'); xlsSet(wsA,'B4',v.revenue);
+  xlsSet(wsA,'A5','Annual Revenue Growth (%)'); xlsSet(wsA,'B5',v.revGrowth);
+  xlsSet(wsA,'A6','COGS (%)'); xlsSet(wsA,'B6',v.cogs);
+  xlsSet(wsA,'A7','Year 1 Salaries'); xlsSet(wsA,'B7',v.salaries);
+  xlsSet(wsA,'A8','Annual Salary Increase (%)'); xlsSet(wsA,'B8',v.salaryInc);
+  xlsSet(wsA,'A9','Year 1 Rent'); xlsSet(wsA,'B9',v.rent);
+  xlsSet(wsA,'A10','Annual Rent Increase (%)'); xlsSet(wsA,'B10',v.rentInc);
+  xlsSet(wsA,'A11','Marketing (% of Revenue)'); xlsSet(wsA,'B11',v.marketing);
+  xlsSet(wsA,'A12','Year 1 Utilities'); xlsSet(wsA,'B12',v.utilities);
+  xlsSet(wsA,'A13','Year 1 Insurance'); xlsSet(wsA,'B13',v.insurance);
+  xlsSet(wsA,'A14','Year 1 Other OpEx'); xlsSet(wsA,'B14',v.otherOpex);
+  xlsSet(wsA,'A15','Initial Capital Investment'); xlsSet(wsA,'B15',v.capex);
+  XLSX.utils.book_append_sheet(wb, wsA, 'Assumptions');
+  // 10-Year Pro Forma tab with formulas
+  const wsP = XLSX.utils.aoa_to_sheet([['10-YEAR P&L PROJECTIONS','','','','','','','','','','']]);
+  wsP['!cols'] = [{wch:22},...Array(10).fill({wch:16})];
+  const cols = ['B','C','D','E','F','G','H','I','J','K'];
+  // Header row
+  xlsSet(wsP,'A2',''); cols.forEach((c,i) => xlsSet(wsP,c+'2','Year '+(i+1)));
+  // Revenue row
+  xlsSet(wsP,'A3','Revenue');
+  cols.forEach((c,i) => xlsSet(wsP,c+'3',0,{f:i===0?'Assumptions!B4':''+cols[i-1]+'3*(1+Assumptions!B5/100)',z:'$#,##0'}));
+  // COGS
+  xlsSet(wsP,'A4','Cost of Goods Sold');
+  cols.forEach((c) => xlsSet(wsP,c+'4',0,{f:c+'3*Assumptions!B6/100',z:'$#,##0'}));
+  // Gross Profit
+  xlsSet(wsP,'A5','Gross Profit');
+  cols.forEach((c) => xlsSet(wsP,c+'5',0,{f:c+'3-'+c+'4',z:'$#,##0'}));
+  // Salaries
+  xlsSet(wsP,'A7','Salaries');
+  cols.forEach((c,i) => xlsSet(wsP,c+'7',0,{f:i===0?'Assumptions!B7':''+cols[i-1]+'7*(1+Assumptions!B8/100)',z:'$#,##0'}));
+  // Rent
+  xlsSet(wsP,'A8','Rent');
+  cols.forEach((c,i) => xlsSet(wsP,c+'8',0,{f:i===0?'Assumptions!B9':''+cols[i-1]+'8*(1+Assumptions!B10/100)',z:'$#,##0'}));
+  // Marketing
+  xlsSet(wsP,'A9','Marketing');
+  cols.forEach((c) => xlsSet(wsP,c+'9',0,{f:c+'3*Assumptions!B11/100',z:'$#,##0'}));
+  // Utilities
+  xlsSet(wsP,'A10','Utilities');
+  cols.forEach((c,i) => xlsSet(wsP,c+'10',0,{f:i===0?'Assumptions!B12':''+cols[i-1]+'10*1.02',z:'$#,##0'}));
+  // Insurance
+  xlsSet(wsP,'A11','Insurance');
+  cols.forEach((c,i) => xlsSet(wsP,c+'11',0,{f:i===0?'Assumptions!B13':''+cols[i-1]+'11*1.03',z:'$#,##0'}));
+  // Other OpEx
+  xlsSet(wsP,'A12','Other Operating Expenses');
+  cols.forEach((c,i) => xlsSet(wsP,c+'12',0,{f:i===0?'Assumptions!B14':''+cols[i-1]+'12*1.02',z:'$#,##0'}));
+  // Total OpEx
+  xlsSet(wsP,'A13','Total Operating Expenses');
+  cols.forEach((c) => xlsSet(wsP,c+'13',0,{f:'SUM('+c+'7:'+c+'12)',z:'$#,##0'}));
+  // EBITDA
+  xlsSet(wsP,'A15','EBITDA');
+  cols.forEach((c) => xlsSet(wsP,c+'15',0,{f:c+'5-'+c+'13',z:'$#,##0'}));
+  // Margin
+  xlsSet(wsP,'A16','EBITDA Margin (%)');
+  cols.forEach((c) => xlsSet(wsP,c+'16',0,{f:'IF('+c+'3>0,'+c+'15/'+c+'3*100,0)',z:'0.0'}));
+  // Cumulative
+  xlsSet(wsP,'A18','Cumulative EBITDA');
+  cols.forEach((c,i) => xlsSet(wsP,c+'18',0,{f:i===0?c+'15':''+cols[i-1]+'18+'+c+'15',z:'$#,##0'}));
+  XLSX.utils.book_append_sheet(wb, wsP, 'Pro Forma');
+  XLSX.writeFile(wb, 'business-pl-projections.xlsx');
+}
+
+// ── Real Estate Pro Forma Formula Export ──
+function exportREProFormaFormula(v) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([['KEYSTONE STACK — Real Estate Pro Forma','','','','',''],['','','','','','']]);
+  ws['!cols'] = [{wch:28},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16}];
+  // Assumptions
+  xlsSet(ws,'A3','ASSUMPTIONS');
+  xlsSet(ws,'A4','Monthly Gross Rent'); xlsSet(ws,'B4',v.grossRent);
+  xlsSet(ws,'A5','Vacancy Rate (%)'); xlsSet(ws,'B5',v.vacancyRate);
+  xlsSet(ws,'A6','Monthly Operating Expenses'); xlsSet(ws,'B6',v.opex);
+  xlsSet(ws,'A7','Annual OpEx Growth (%)'); xlsSet(ws,'B7',v.opexGrowth);
+  xlsSet(ws,'A8','Annual Rent Growth (%)'); xlsSet(ws,'B8',v.rentGrowth);
+  xlsSet(ws,'A9','Loan Amount'); xlsSet(ws,'B9',v.loanAmount);
+  xlsSet(ws,'A10','Loan Rate (%)'); xlsSet(ws,'B10',v.loanRate);
+  xlsSet(ws,'A11','Loan Term (years)'); xlsSet(ws,'B11',v.loanTerm);
+  xlsSet(ws,'A12','Exit Cap Rate (%)'); xlsSet(ws,'B12',v.capRate);
+  xlsSet(ws,'A13','Annual Debt Service'); xlsSet(ws,'B13',0,{f:'IF(AND(B9>0,B10>0),-PMT(B10/100/12,B11*12,B9)*12,0)',z:'$#,##0'});
+  // 5-Year Pro Forma
+  const yc = ['B','C','D','E','F'];
+  xlsSet(ws,'A15','5-YEAR PRO FORMA');
+  yc.forEach((c,i) => xlsSet(ws,c+'15','Year '+(i+1)));
+  xlsSet(ws,'A16','Gross Potential Income');
+  yc.forEach((c,i) => xlsSet(ws,c+'16',0,{f:'B4*12*(1+B8/100)^'+i,z:'$#,##0'}));
+  xlsSet(ws,'A17','Vacancy Loss');
+  yc.forEach((c) => xlsSet(ws,c+'17',0,{f:c+'16*B5/100',z:'$#,##0'}));
+  xlsSet(ws,'A18','Effective Gross Income');
+  yc.forEach((c) => xlsSet(ws,c+'18',0,{f:c+'16-'+c+'17',z:'$#,##0'}));
+  xlsSet(ws,'A19','Operating Expenses');
+  yc.forEach((c,i) => xlsSet(ws,c+'19',0,{f:'B6*12*(1+B7/100)^'+i,z:'$#,##0'}));
+  xlsSet(ws,'A20','Net Operating Income');
+  yc.forEach((c) => xlsSet(ws,c+'20',0,{f:c+'18-'+c+'19',z:'$#,##0'}));
+  xlsSet(ws,'A21','Debt Service');
+  yc.forEach((c) => xlsSet(ws,c+'21',0,{f:'B13',z:'$#,##0'}));
+  xlsSet(ws,'A22','Cash Flow After Debt');
+  yc.forEach((c) => xlsSet(ws,c+'22',0,{f:c+'20-'+c+'21',z:'$#,##0'}));
+  xlsSet(ws,'A23','DSCR');
+  yc.forEach((c) => xlsSet(ws,c+'23',0,{f:'IF('+c+'21>0,'+c+'20/'+c+'21,0)',z:'0.00"x"'}));
+  // Exit Analysis
+  xlsSet(ws,'A25','EXIT ANALYSIS (Year 5)');
+  xlsSet(ws,'A26','Exit Value (NOI / Cap Rate)'); xlsSet(ws,'B26',0,{f:'F20/(B12/100)',z:'$#,##0'});
+  xlsSet(ws,'A27','5-Year Total Cash Flow'); xlsSet(ws,'B27',0,{f:'SUM(B22:F22)',z:'$#,##0'});
+  xlsSet(ws,'A28','Net Sale Proceeds'); xlsSet(ws,'B28',0,{f:'B26-B9*0.85',z:'$#,##0'});
+  xlsSet(ws,'A30','Disclaimer: Estimates for planning only. Not financial, legal, or tax advice.');
+  XLSX.utils.book_append_sheet(wb, ws, 'RE Pro Forma');
+  XLSX.writeFile(wb, 'real-estate-pro-forma.xlsx');
+}
+
+// ── Restaurant Builder Formula Export ──
+function exportRestaurantFormula(v, restaurantName) {
+  const wb = XLSX.utils.book_new();
+  // Assumptions tab
+  const wsA = XLSX.utils.aoa_to_sheet([[(restaurantName||'Restaurant')+' — Business Plan',''],['Generated: '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),'']]);
+  wsA['!cols'] = [{wch:35},{wch:18}];
+  xlsSet(wsA,'A4','ASSUMPTIONS');
+  xlsSet(wsA,'A5','Square Footage'); xlsSet(wsA,'B5',v.sqft);
+  xlsSet(wsA,'A6','Seats'); xlsSet(wsA,'B6',v.seats);
+  xlsSet(wsA,'A7','Buildout Cost'); xlsSet(wsA,'B7',v.buildout);
+  xlsSet(wsA,'A8','Equipment'); xlsSet(wsA,'B8',v.equipment);
+  xlsSet(wsA,'A9','Initial Inventory'); xlsSet(wsA,'B9',v.inventory);
+  xlsSet(wsA,'A10','Permits & Licenses'); xlsSet(wsA,'B10',v.permits);
+  xlsSet(wsA,'A11','Liquor License'); xlsSet(wsA,'B11',v.liquorLicense);
+  xlsSet(wsA,'A12','Pre-Opening Costs'); xlsSet(wsA,'B12',v.preOpening);
+  xlsSet(wsA,'A13','Working Capital Reserve'); xlsSet(wsA,'B13',v.workingCapital);
+  xlsSet(wsA,'A15','REVENUE ASSUMPTIONS');
+  xlsSet(wsA,'A16','Average Check'); xlsSet(wsA,'B16',v.avgCheck);
+  xlsSet(wsA,'A17','Covers Per Day'); xlsSet(wsA,'B17',v.covers);
+  xlsSet(wsA,'A18','Days Open Per Week'); xlsSet(wsA,'B18',v.daysOpen);
+  xlsSet(wsA,'A19','Food Cost (%)'); xlsSet(wsA,'B19',v.foodCost);
+  xlsSet(wsA,'A20','Beverage Cost (%)'); xlsSet(wsA,'B20',v.bevCost);
+  xlsSet(wsA,'A21','Beverage Mix (%)'); xlsSet(wsA,'B21',v.bevMix);
+  xlsSet(wsA,'A23','LABOR ASSUMPTIONS');
+  xlsSet(wsA,'A24','Managers'); xlsSet(wsA,'B24',v.managers);
+  xlsSet(wsA,'A25','Manager Salary'); xlsSet(wsA,'B25',v.mgrSalary);
+  xlsSet(wsA,'A26','Servers'); xlsSet(wsA,'B26',v.servers);
+  xlsSet(wsA,'A27','Server Hourly Wage'); xlsSet(wsA,'B27',v.serverWage);
+  xlsSet(wsA,'A28','Server Hours/Day'); xlsSet(wsA,'B28',v.serverHrs);
+  xlsSet(wsA,'A29','Cooks'); xlsSet(wsA,'B29',v.cooks);
+  xlsSet(wsA,'A30','Cook Hourly Wage'); xlsSet(wsA,'B30',v.cookWage);
+  xlsSet(wsA,'A31','Cook Hours/Day'); xlsSet(wsA,'B31',v.cookHrs);
+  xlsSet(wsA,'A32','Support Staff'); xlsSet(wsA,'B32',v.support);
+  xlsSet(wsA,'A33','Support Hourly Wage'); xlsSet(wsA,'B33',v.supportWage);
+  xlsSet(wsA,'A34','Support Hours/Day'); xlsSet(wsA,'B34',v.supportHrs);
+  xlsSet(wsA,'A35','Payroll Burden (%)'); xlsSet(wsA,'B35',v.payrollBurden);
+  xlsSet(wsA,'A37','OTHER EXPENSES');
+  xlsSet(wsA,'A38','Monthly Rent'); xlsSet(wsA,'B38',v.rent);
+  xlsSet(wsA,'A39','Monthly Utilities'); xlsSet(wsA,'B39',v.utilities);
+  xlsSet(wsA,'A40','Monthly Insurance'); xlsSet(wsA,'B40',v.insurance);
+  xlsSet(wsA,'A41','Marketing (% of Revenue)'); xlsSet(wsA,'B41',v.marketing);
+  xlsSet(wsA,'A42','Misc (% of Revenue)'); xlsSet(wsA,'B42',v.miscPct);
+  xlsSet(wsA,'A43','Owner Draw / Salary'); xlsSet(wsA,'B43',v.ownerDraw);
+  xlsSet(wsA,'A44','Loan Amount'); xlsSet(wsA,'B44',v.loanAmt);
+  xlsSet(wsA,'A45','Loan Rate (%)'); xlsSet(wsA,'B45',v.loanRate);
+  xlsSet(wsA,'A46','Loan Term (years)'); xlsSet(wsA,'B46',v.loanTermYrs);
+  XLSX.utils.book_append_sheet(wb, wsA, 'Assumptions');
+  // P&L tab with formulas referencing Assumptions
+  const wsP = XLSX.utils.aoa_to_sheet([[restaurantName||'Restaurant',''],['Annual P&L — Formula-Driven','']]);
+  wsP['!cols'] = [{wch:35},{wch:20}];
+  xlsSet(wsP,'A3','STARTUP COSTS');
+  xlsSet(wsP,'A4','Hard Startup (Build+Equip+Inv+Permits+Liquor)'); xlsSet(wsP,'B4',0,{f:'Assumptions!B7+Assumptions!B8+Assumptions!B9+Assumptions!B10+Assumptions!B11',z:'$#,##0'});
+  xlsSet(wsP,'A5','Total Startup Cost'); xlsSet(wsP,'B5',0,{f:'B4+Assumptions!B12+Assumptions!B13',z:'$#,##0'});
+  xlsSet(wsP,'A6','Cost Per Seat'); xlsSet(wsP,'B6',0,{f:'IF(Assumptions!B6>0,B5/Assumptions!B6,0)',z:'$#,##0'});
+  xlsSet(wsP,'A8','ANNUAL REVENUE');
+  xlsSet(wsP,'A9','Annual Covers'); xlsSet(wsP,'B9',0,{f:'Assumptions!B17*Assumptions!B18*52'});
+  xlsSet(wsP,'A10','Seat Turns Per Day'); xlsSet(wsP,'B10',0,{f:'IF(Assumptions!B6>0,Assumptions!B17/Assumptions!B6,0)',z:'0.0'});
+  xlsSet(wsP,'A11','Revenue Per Seat/Day'); xlsSet(wsP,'B11',0,{f:'IF(Assumptions!B6>0,(B9*Assumptions!B16)/(Assumptions!B6*Assumptions!B18*52),0)',z:'$#,##0.00'});
+  xlsSet(wsP,'A12','Food Revenue'); xlsSet(wsP,'B12',0,{f:'B9*Assumptions!B16*(1-Assumptions!B21/100)',z:'$#,##0'});
+  xlsSet(wsP,'A13','Beverage Revenue'); xlsSet(wsP,'B13',0,{f:'B9*Assumptions!B16*(Assumptions!B21/100)',z:'$#,##0'});
+  xlsSet(wsP,'A14','Total Revenue'); xlsSet(wsP,'B14',0,{f:'B12+B13',z:'$#,##0'});
+  xlsSet(wsP,'A15','Revenue Per Sq Ft'); xlsSet(wsP,'B15',0,{f:'IF(Assumptions!B5>0,B14/Assumptions!B5,0)',z:'$#,##0'});
+  xlsSet(wsP,'A17','COST OF GOODS SOLD');
+  xlsSet(wsP,'A18','Food COGS'); xlsSet(wsP,'B18',0,{f:'B12*Assumptions!B19/100',z:'$#,##0'});
+  xlsSet(wsP,'A19','Beverage COGS'); xlsSet(wsP,'B19',0,{f:'B13*Assumptions!B20/100',z:'$#,##0'});
+  xlsSet(wsP,'A20','Total COGS'); xlsSet(wsP,'B20',0,{f:'B18+B19',z:'$#,##0'});
+  xlsSet(wsP,'A21','COGS %'); xlsSet(wsP,'B21',0,{f:'IF(B14>0,B20/B14*100,0)',z:'0.0"%"'});
+  xlsSet(wsP,'A22','Gross Profit'); xlsSet(wsP,'B22',0,{f:'B14-B20',z:'$#,##0'});
+  xlsSet(wsP,'A24','LABOR');
+  xlsSet(wsP,'A25','Manager Cost'); xlsSet(wsP,'B25',0,{f:'Assumptions!B24*Assumptions!B25',z:'$#,##0'});
+  xlsSet(wsP,'A26','Server Cost'); xlsSet(wsP,'B26',0,{f:'Assumptions!B26*Assumptions!B27*Assumptions!B28*Assumptions!B18*52',z:'$#,##0'});
+  xlsSet(wsP,'A27','Cook Cost'); xlsSet(wsP,'B27',0,{f:'Assumptions!B29*Assumptions!B30*Assumptions!B31*Assumptions!B18*52',z:'$#,##0'});
+  xlsSet(wsP,'A28','Support Cost'); xlsSet(wsP,'B28',0,{f:'Assumptions!B32*Assumptions!B33*Assumptions!B34*Assumptions!B18*52',z:'$#,##0'});
+  xlsSet(wsP,'A29','Base Labor'); xlsSet(wsP,'B29',0,{f:'SUM(B25:B28)',z:'$#,##0'});
+  xlsSet(wsP,'A30','Payroll Taxes & Benefits'); xlsSet(wsP,'B30',0,{f:'B29*Assumptions!B35/100',z:'$#,##0'});
+  xlsSet(wsP,'A31','Total Labor'); xlsSet(wsP,'B31',0,{f:'B29+B30',z:'$#,##0'});
+  xlsSet(wsP,'A32','Labor %'); xlsSet(wsP,'B32',0,{f:'IF(B14>0,B31/B14*100,0)',z:'0.0"%"'});
+  xlsSet(wsP,'A34','PRIME COST');
+  xlsSet(wsP,'A35','Prime Cost (COGS + Labor)'); xlsSet(wsP,'B35',0,{f:'B20+B31',z:'$#,##0'});
+  xlsSet(wsP,'A36','Prime Cost %'); xlsSet(wsP,'B36',0,{f:'IF(B14>0,B35/B14*100,0)',z:'0.0"%"'});
+  xlsSet(wsP,'A38','OPERATING EXPENSES');
+  xlsSet(wsP,'A39','Rent'); xlsSet(wsP,'B39',0,{f:'Assumptions!B38*12',z:'$#,##0'});
+  xlsSet(wsP,'A40','Occupancy Cost %'); xlsSet(wsP,'B40',0,{f:'IF(B14>0,B39/B14*100,0)',z:'0.0"%"'});
+  xlsSet(wsP,'A41','Owner Salary / Draw'); xlsSet(wsP,'B41',0,{f:'Assumptions!B43',z:'$#,##0'});
+  xlsSet(wsP,'A42','Utilities'); xlsSet(wsP,'B42',0,{f:'Assumptions!B39*12',z:'$#,##0'});
+  xlsSet(wsP,'A43','Insurance'); xlsSet(wsP,'B43',0,{f:'Assumptions!B40*12',z:'$#,##0'});
+  xlsSet(wsP,'A44','Marketing'); xlsSet(wsP,'B44',0,{f:'B14*Assumptions!B41/100',z:'$#,##0'});
+  xlsSet(wsP,'A45','Miscellaneous'); xlsSet(wsP,'B45',0,{f:'B14*Assumptions!B42/100',z:'$#,##0'});
+  xlsSet(wsP,'A46','Debt Service'); xlsSet(wsP,'B46',0,{f:'IF(AND(Assumptions!B44>0,Assumptions!B45>0),-PMT(Assumptions!B45/100/12,Assumptions!B46*12,Assumptions!B44)*12,0)',z:'$#,##0'});
+  xlsSet(wsP,'A47','Total Operating Expenses'); xlsSet(wsP,'B47',0,{f:'SUM(B39,B41:B46)',z:'$#,##0'});
+  xlsSet(wsP,'A49','BOTTOM LINE');
+  xlsSet(wsP,'A50','Net Income (after owner draw)'); xlsSet(wsP,'B50',0,{f:'B22-B31-B47',z:'$#,##0'});
+  xlsSet(wsP,'A51','Net Margin (%)'); xlsSet(wsP,'B51',0,{f:'IF(B14>0,B50/B14*100,0)',z:'0.0"%"'});
+  xlsSet(wsP,'A52','Monthly Cash Flow'); xlsSet(wsP,'B52',0,{f:'B50/12',z:'$#,##0'});
+  xlsSet(wsP,'A53','Breakeven Covers/Day'); xlsSet(wsP,'B53',0,{f:'IF(AND(Assumptions!B16>0,Assumptions!B18>0),(B31+B47)/(Assumptions!B16*Assumptions!B18*52)*Assumptions!B18*52/(Assumptions!B18*52),0)'});
+  xlsSet(wsP,'A54','Payback Period (months)'); xlsSet(wsP,'B54',0,{f:'IF(B50>0,ROUND(B5/(B50/12),0),0)'});
+  xlsSet(wsP,'A56','Disclaimer: Estimates for planning only. Not financial, legal, or tax advice.');
+  XLSX.utils.book_append_sheet(wb, wsP, 'P&L');
+  XLSX.writeFile(wb, (restaurantName||'restaurant').replace(/[^a-zA-Z0-9]/g,'-').toLowerCase()+'-business-plan.xlsx');
 }
 
 // ─── SHARED COMPONENTS: Health Badge + Export Bar ────────────────────────────
@@ -1012,7 +1337,7 @@ function DealHealthBadge({health}) {
     </div>
   );
 }
-function ExportBar({title, rows, health}) {
+function ExportBar({title, rows, health, formulaExport}) {
   if (!rows || rows.length === 0) return null;
   return (
     <div className="export-bar">
@@ -1020,9 +1345,9 @@ function ExportBar({title, rows, health}) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         PDF Report
       </button>
-      <button className="btn-export" onClick={() => exportToExcel(title, rows, health)}>
+      <button className="btn-export" onClick={() => formulaExport ? formulaExport() : exportToExcel(title, rows, health)}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-        Excel Data
+        {formulaExport ? 'Excel (Live Formulas)' : 'Excel Data'}
       </button>
     </div>
   );
@@ -1893,7 +2218,7 @@ function CapitalStackSim() {
         <ResultRow label="Sponsor Total Return" value={fmt(sponsorTotal)} className="result-good"/>
         <ResultRow label="Sponsor Equity Multiple" value={sponsorMultiple.toFixed(2)+'x'} className="result-good"/>
         <DealHealthBadge health={getDealHealth('capital-stack', {gap, ltc, investorMultiple, sponsorMultiple})}/>
-        <ExportBar title="Capital Stack Analysis" health={getDealHealth('capital-stack', {gap, ltc, investorMultiple, sponsorMultiple})} rows={[
+        <ExportBar title="Capital Stack Analysis" formulaExport={() => exportCapitalStackFormula(v)} health={getDealHealth('capital-stack', {gap, ltc, investorMultiple, sponsorMultiple})} rows={[
           {section:'Capital Stack'},...segments.map(s=>({label:s.label,value:fmt(s.val)})),{label:'Total Sources',value:fmt(totalSources)},{label:'Senior LTC',value:fmtPct(ltc)},
           ...(gap!==0?[{label:gap>0?'Funding Gap':'Surplus',value:fmt(Math.abs(gap))}]:[]),
           ...(totalDS>0?[{section:'Debt Service'},{label:'Senior Annual DS',value:fmt(seniorDS)},...(mezzDS>0?[{label:'Mezz Annual DS',value:fmt(mezzDS)}]:[]),{label:'Total Annual DS',value:fmt(totalDS)},...(v.projectedNOI>0?[{label:'DSCR',value:(v.projectedNOI/totalDS).toFixed(2)+'x'},{label:'Projected NOI',value:fmt(v.projectedNOI)},{label:'Cash Flow After DS',value:fmt(v.projectedNOI-totalDS)}]:[])]:[]  ),
@@ -2099,7 +2424,7 @@ function RestaurantSim() {
             <ResultRow label="Your Target Covers/Day" value={v.covers}/>
             <ResultRow label="Cushion" value={results.breakevenCoversPerDay > 0 && v.covers > results.breakevenCoversPerDay ? (v.covers - results.breakevenCoversPerDay) + ' covers/day above breakeven' : 'Below breakeven'} className={v.covers > results.breakevenCoversPerDay ? 'result-good' : 'result-bad'}/>
               <DealHealthBadge health={getDealHealth('restaurant', results)}/>
-              <ExportBar title={(restaurantName || 'Restaurant') + ' — Business Plan'} health={getDealHealth('restaurant', results)} rows={[
+              <ExportBar title={(restaurantName || 'Restaurant') + ' — Business Plan'} formulaExport={() => exportRestaurantFormula(v, restaurantName)} health={getDealHealth('restaurant', results)} rows={[
                 {section:'Startup'},{label:'Total Startup Cost',value:fmt(results.startupCost)},{label:'Hard Startup Costs',value:fmt(results.hardStartup)},{label:'Cost Per Seat',value:results.costPerSeat > 0 ? fmt(results.costPerSeat) : 'N/A'},{label:'Payback Period',value:results.paybackMonths > 0 ? results.paybackMonths + ' months' : 'N/A'},
                 {section:'Revenue'},{label:'Annual Covers',value:results.annualCovers.toLocaleString()},{label:'Seat Turns Per Day',value:results.seatTurns > 0 ? results.seatTurns.toFixed(1) : 'N/A'},{label:'Revenue Per Seat/Day',value:results.revPerSeatDay > 0 ? fmt(results.revPerSeatDay) : 'N/A'},{label:'Food Revenue',value:fmt(results.foodRevenue)},{label:'Beverage Revenue',value:fmt(results.bevRevenue)},{label:'Total Revenue',value:fmt(results.totalRevenue)},{label:'Revenue Per Sq Ft',value:fmt(results.revPerSF)},
                 {section:'Cost of Goods'},{label:'Total COGS',value:fmt(results.totalCOGS)},{label:'COGS %',value:fmtPct(results.cogsPct)},{label:'Gross Profit',value:fmt(results.grossProfit)},
@@ -2193,7 +2518,7 @@ function ProFormaSim() {
               <ResultRow label="Year 10 EBITDA" value={fmt(results.years[9].ebitda)} className={results.years[9].ebitda > 0 ? 'result-good' : 'result-bad'}/>
               <ResultRow label="Cumulative EBITDA" value={fmt(results.years.reduce((s,y)=>s+y.ebitda,0))} className="result-good"/>
               <DealHealthBadge health={getDealHealth('pro-forma', results)}/>
-              <ExportBar title="Business P&L Projections" health={getDealHealth('pro-forma', results)} rows={[
+              <ExportBar title="Business P&L Projections" formulaExport={() => exportProFormaFormula(v)} health={getDealHealth('pro-forma', results)} rows={[
                 {section:'Initial Investment'},{label:'Capital Investment',value:fmt(results.capex)},
                 {section:'10-Year Projections'},...results.years.map(y=>({label:'Year '+y.year,value:'Rev: '+fmt(y.rev)+' | EBITDA: '+fmt(y.ebitda)+' ('+y.margin.toFixed(1)+'%)'})),
                 {section:'Summary'},{label:'Year 10 Revenue',value:fmt(results.years[9].rev)},{label:'Year 10 EBITDA',value:fmt(results.years[9].ebitda)},{label:'Cumulative EBITDA',value:fmt(results.years.reduce((s,y)=>s+y.ebitda,0))}
@@ -2275,7 +2600,7 @@ function SourcesAndUsesSim() {
           </div>
         )}
         <DealHealthBadge health={getDealHealth('sources-uses', {gap, debtRatio: totalUses>0?v.seniorDebt/totalUses*100:0, grantPct: totalUses>0?(v.grantFunds+v.taxCreditEquity)/totalUses*100:0})}/>
-        <ExportBar title="Sources and Uses" health={getDealHealth('sources-uses', {gap, debtRatio: totalUses>0?v.seniorDebt/totalUses*100:0, grantPct: totalUses>0?(v.grantFunds+v.taxCreditEquity)/totalUses*100:0})} rows={[
+        <ExportBar title="Sources and Uses" formulaExport={() => exportSourcesUsesFormula(v)} health={getDealHealth('sources-uses', {gap, debtRatio: totalUses>0?v.seniorDebt/totalUses*100:0, grantPct: totalUses>0?(v.grantFunds+v.taxCreditEquity)/totalUses*100:0})} rows={[
           {section:'Uses of Funds'},...usesRows.map(r=>({label:r.label,value:fmt(r.val)+' ('+fmtPct(totalUses>0?r.val/totalUses*100:0)+')'})),{label:'Total Uses',value:fmt(totalUses)},
           {section:'Sources of Funds'},...sourcesRows.map(r=>({label:r.label,value:fmt(r.val)+(totalSources>0?' ('+fmtPct(r.val/totalSources*100)+')':'')})),{label:'Total Sources',value:fmt(totalSources)},
           {section:'Analysis'},{label:gap>0?'Funding Gap':gap<0?'Surplus':'Balanced',value:fmt(Math.abs(gap))},{label:'Debt-to-Total',value:fmtPct(totalUses>0?v.seniorDebt/totalUses*100:0)},{label:'Equity-to-Total',value:fmtPct(totalUses>0?v.ownerEquity/totalUses*100:0)},{label:'Tax Credit / Grant %',value:fmtPct(totalUses>0?(v.grantFunds+v.taxCreditEquity)/totalUses*100:0)}
@@ -2364,7 +2689,7 @@ function RealEstateProFormaSim() {
         <ResultRow label="Net Sale Proceeds" value={fmt(netProceeds)} className="result-good"/>
         <ResultRow label="5-Year Total Cash Flow" value={fmt(years.reduce((s,y)=>s+y.cashFlow,0))}/>
         <DealHealthBadge health={getDealHealth('re-proforma', {dscr:y1.dscr, cashFlow:y1.cashFlow, exitValue, noiGrowth:y5.noi>y1.noi})}/>
-        <ExportBar title="Real Estate Pro Forma" health={getDealHealth('re-proforma', {dscr:y1.dscr, cashFlow:y1.cashFlow, exitValue, noiGrowth:y5.noi>y1.noi})} rows={[
+        <ExportBar title="Real Estate Pro Forma" formulaExport={() => exportREProFormaFormula(v)} health={getDealHealth('re-proforma', {dscr:y1.dscr, cashFlow:y1.cashFlow, exitValue, noiGrowth:y5.noi>y1.noi})} rows={[
           {section:'Year 1 Summary'},{label:'Gross Potential Income',value:fmt(y1.gpi)},{label:'Vacancy Loss',value:fmt(y1.vacancy)},{label:'Effective Gross Income',value:fmt(y1.egi)},{label:'Operating Expenses',value:fmt(y1.opex)},{label:'Net Operating Income',value:fmt(y1.noi)},{label:'Annual Debt Service',value:fmt(y1.debtService)},{label:'Cash Flow After Debt',value:fmt(y1.cashFlow)},{label:'DSCR',value:y1.dscr===Infinity?'N/A':y1.dscr.toFixed(2)+'x'},
           {section:'5-Year Pro Forma'},...years.map(y=>({label:'Year '+y.year,value:'EGI: '+fmt(y.egi)+' | NOI: '+fmt(y.noi)+' | CF: '+fmt(y.cashFlow)})),
           {section:'Exit Analysis'},{label:'Exit Value',value:fmt(exitValue)},{label:'Remaining Loan',value:fmt(remainingLoan)},{label:'Net Sale Proceeds',value:fmt(netProceeds)},{label:'5-Year Total Cash Flow',value:fmt(years.reduce((s,y)=>s+y.cashFlow,0))}
@@ -2730,24 +3055,73 @@ function DealMemoPage({setPage}) {
   const [memo, setMemo] = useState({
     projectName:'',address:'',city:'Erie',state:'PA',
     projectType:'historic-rehab',projectDesc:'',
-    acquisitionCost:0,hardCosts:0,softCosts:0,financingCosts:0,contingency:0,
-    seniorDebt:0,seniorRate:6.5,seniorTerm:25,
-    mezzDebt:0,mezzRate:12,
-    taxCreditEquity:0,grantFunds:0,ownerEquity:0,
-    grossRent:0,vacancyRate:10,monthlyOpex:0,
+    // Uses (expanded 18-line budget)
+    acquisitionCost:0,demolition:0,structural:0,mep:0,finishes:0,ffe:0,siteWork:0,
+    archEng:0,legalAcct:0,permitsZoning:0,environmental:0,appraisalStudy:0,
+    loanOrigination:0,constructionInterest:0,operatingReserve:0,replacementReserve:0,
+    contingency:0,developerFee:0,
+    // HTC/NMTC flags
+    htcEligibleCosts:0,nmtcEligibleCosts:0,
+    // Legacy aliases for backward compat
+    hardCosts:0,softCosts:0,financingCosts:0,
+    // Sources with terms
+    seniorDebt:0,seniorRate:6.5,seniorTerm:25,seniorLender:'',seniorStatus:'proposed',
+    mezzDebt:0,mezzRate:12,mezzTerm:7,mezzLender:'',mezzStatus:'proposed',
+    taxCreditEquity:0,tcProgram:'htc',tcInvestor:'',tcPricingRate:0.92,tcStatus:'proposed',
+    grantFunds:0,grantProgram:'',grantStatus:'proposed',
+    ownerEquity:0,
+    appraisedValue:0,
+    // Rent Roll (array of tenants)
+    rentRoll:[{name:'',sf:0,rentPerSF:0,leaseType:'NNN',leaseTerm:5,status:'vacant'}],
+    vacancyRate:10,
+    // Expense Detail (line items)
+    expRealEstateTax:0,expInsurance:0,expManagement:8,expMaintenance:0,
+    expUtilities:0,expMarketing:0,expAdmin:0,expReserves:0,expOther:0,
+    expGrowthRate:3,
+    // Legacy single-line (for backward compat)
+    grossRent:0,monthlyOpex:0,
     totalSF:0,units:0,
-    jobsCreated:0,jobsRetained:0,
+    // Community Impact (expanded)
+    jobsCreated:0,jobsRetained:0,avgWage:'',constructionJobs:0,
+    pctLocalHire:30,pctMBESpend:0,
+    preRenovationAssessment:0,postRenovationAssessment:0,
+    isLERTA:false,
     communityImpact:'',timeline:'12 months',
     contactName:'',contactTitle:'',contactOrg:'',contactEmail:'',contactPhone:''
   });
   const set = (k,val) => setMemo({...memo,[k]:val});
-  // Calculated values
-  const totalUses = memo.acquisitionCost + memo.hardCosts + memo.softCosts + memo.financingCosts + memo.contingency;
+  // Rent Roll calculations
+  const rentRollGrossMonthly = memo.rentRoll.reduce((sum,t) => sum + (t.sf * t.rentPerSF / 12), 0);
+  const rentRollGrossAnnual = memo.rentRoll.reduce((sum,t) => sum + (t.sf * t.rentPerSF), 0);
+  const hasRentRollData = memo.rentRoll.some(t => t.sf > 0 && t.rentPerSF > 0);
+  // Use rent roll if populated, else fall back to legacy single grossRent
+  const effectiveGrossRentMonthly = hasRentRollData ? rentRollGrossMonthly : memo.grossRent;
+  // Expense Detail calculations
+  const expenseItems = [
+    {k:'expRealEstateTax',label:'Real Estate Taxes'},{k:'expInsurance',label:'Insurance'},
+    {k:'expMaintenance',label:'Maintenance & Repairs'},{k:'expUtilities',label:'Utilities'},
+    {k:'expMarketing',label:'Marketing/Leasing'},{k:'expAdmin',label:'Admin & Legal'},
+    {k:'expReserves',label:'Replacement Reserves'},{k:'expOther',label:'Other'}
+  ];
+  const hasExpenseDetail = expenseItems.some(e => memo[e.k] > 0);
+  // Mgmt fee is % of EGI — calculated below after EGI
+  // Uses calculation (expanded)
+  const hardCostTotal = memo.demolition + memo.structural + memo.mep + memo.finishes + memo.ffe + memo.siteWork;
+  const softCostTotal = memo.archEng + memo.legalAcct + memo.permitsZoning + memo.environmental + memo.appraisalStudy;
+  const financingCostTotal = memo.loanOrigination + memo.constructionInterest + memo.operatingReserve + memo.replacementReserve;
+  const hasExpandedUses = hardCostTotal > 0 || softCostTotal > 0 || financingCostTotal > 0;
+  // Use expanded if populated, else fall back to legacy 5-line
+  const totalUses = hasExpandedUses
+    ? (memo.acquisitionCost + hardCostTotal + softCostTotal + financingCostTotal + memo.contingency + memo.developerFee)
+    : (memo.acquisitionCost + memo.hardCosts + memo.softCosts + memo.financingCosts + memo.contingency);
   const totalSources = memo.seniorDebt + memo.mezzDebt + memo.taxCreditEquity + memo.grantFunds + memo.ownerEquity;
   const gap = totalUses - totalSources;
-  const annualRent = memo.grossRent * 12;
+  const annualRent = effectiveGrossRentMonthly * 12;
   const egi = annualRent * (1 - memo.vacancyRate/100);
-  const annualOpex = memo.monthlyOpex * 12;
+  // Expense calc: use detail if populated, else legacy single line
+  const mgmtFee = egi * memo.expManagement / 100;
+  const detailExpenseAnnual = hasExpenseDetail ? (expenseItems.reduce((s,e) => s + memo[e.k], 0) * 12 + mgmtFee) : 0;
+  const annualOpex = hasExpenseDetail ? detailExpenseAnnual : (memo.monthlyOpex * 12);
   const noi = egi - annualOpex;
   const seniorDS = memo.seniorDebt > 0 && memo.seniorRate > 0 ? pmt(memo.seniorRate/100/12, memo.seniorTerm*12, memo.seniorDebt) * 12 : 0;
   const mezzDS = memo.mezzDebt > 0 ? memo.mezzDebt * memo.mezzRate/100 : 0;
@@ -2756,6 +3130,9 @@ function DealMemoPage({setPage}) {
   const cashFlow = noi - totalDS;
   const capRate = totalUses > 0 ? (noi / totalUses * 100) : 0;
   const ltc = totalUses > 0 ? (memo.seniorDebt / totalUses * 100) : 0;
+  const ltv = memo.appraisedValue > 0 ? (memo.seniorDebt / memo.appraisedValue * 100) : 0;
+  const debtYield = (memo.seniorDebt + memo.mezzDebt) > 0 ? (noi / (memo.seniorDebt + memo.mezzDebt) * 100) : 0;
+  const breakEvenOcc = annualRent > 0 ? ((annualOpex + totalDS) / annualRent * 100) : 0;
   const projectTypes = {'historic-rehab':'Historic Rehabilitation','new-construction':'New Construction','mixed-use':'Mixed-Use Development','affordable-housing':'Affordable Housing','brownfield':'Brownfield Redevelopment'};
 
   const exportMemoPDF = () => {
@@ -2882,7 +3259,7 @@ function DealMemoPage({setPage}) {
     doc.save((memo.projectName || 'deal-memo').replace(/[^a-zA-Z0-9]/g,'-').toLowerCase()+'-deal-memo.pdf');
   };
 
-  // ── EXCEL PRO FORMA EXPORT ──────────────────────────────────────────────
+  // ── EXCEL PRO FORMA EXPORT (FORMULA-DRIVEN WITH RENT ROLL + EXPENSE DETAIL) ──
   const exportMemoExcel = () => {
     const wb = XLSX.utils.book_new();
     const money = '$#,##0;($#,##0);"-"';
@@ -2900,226 +3277,387 @@ function DealMemoPage({setPage}) {
         ws[ref] = {t:'s', v:String(val||'')};
       }
       if (z && ws[ref]) ws[ref].z = z;
+      // Update sheet range
+      if (ws['!ref']) {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const c = XLSX.utils.decode_cell(ref);
+        if (c.r > range.e.r) range.e.r = c.r;
+        if (c.c > range.e.c) range.e.c = c.c;
+        ws['!ref'] = XLSX.utils.encode_range(range);
+      }
     };
 
-    // ════════════════ SHEET 1: DEAL SUMMARY ════════════════
+    // ════════════════ SHEET 1: DEAL SUMMARY (EXPANDED) ════════════════
     const s1d = [];
     const R1 = (vals) => { s1d.push(vals); return s1d.length; };
-    R1(['KEYSTONE STACK — DEAL SUMMARY PRO FORMA']);
-    R1(['Generated', new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})]);
+    R1(['KEYSTONE STACK — DEAL SUMMARY PRO FORMA','','']);
+    R1(['Generated', new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),'']);
     R1([]);
-    R1(['PROJECT INFORMATION']);
-    R1(['Project Name', memo.projectName || 'Untitled Project']);
-    R1(['Address', (memo.address ? memo.address+', ':'')+memo.city+', '+memo.state]);
-    R1(['Project Type', projectTypes[memo.projectType]||'Development']);
-    R1(['Estimated Timeline', memo.timeline]);
-    if (memo.projectDesc) R1(['Description', memo.projectDesc]);
+    R1(['PROJECT INFORMATION','','']);
+    R1(['Project Name', memo.projectName || 'Untitled Project','']);
+    R1(['Address', (memo.address ? memo.address+', ':'')+memo.city+', '+memo.state,'']);
+    R1(['Project Type', projectTypes[memo.projectType]||'Development','']);
+    R1(['Estimated Timeline', memo.timeline,'']);
+    R1(['Total Square Footage', memo.totalSF||0,'']);
+    if (memo.units > 0) R1(['Residential Units', memo.units,'']);
+    if (memo.projectDesc) R1(['Description', memo.projectDesc,'']);
     R1([]);
-    // Uses
-    R1(['USES OF FUNDS','Amount']);
+    // Expanded Uses
+    R1(['USES OF FUNDS','Amount','% of Total']);
     const u0 = s1d.length + 1;
-    R1(['Acquisition / Land', memo.acquisitionCost]);
-    R1(['Hard Costs', memo.hardCosts]);
-    R1(['Soft Costs', memo.softCosts]);
-    R1(['Financing Costs', memo.financingCosts]);
-    R1(['Contingency', memo.contingency]);
+    if (hasExpandedUses) {
+      R1(['Acquisition / Land', memo.acquisitionCost,'']);
+      R1(['Demolition / Abatement', memo.demolition,'']);
+      R1(['Structural / Shell', memo.structural,'']);
+      R1(['Mechanical / Electrical / Plumbing', memo.mep,'']);
+      R1(['Interior Finishes', memo.finishes,'']);
+      R1(['FF&E', memo.ffe,'']);
+      R1(['Site Work', memo.siteWork,'']);
+      R1(['Architecture & Engineering', memo.archEng,'']);
+      R1(['Legal & Accounting', memo.legalAcct,'']);
+      R1(['Permits & Zoning', memo.permitsZoning,'']);
+      R1(['Environmental (Phase I/II)', memo.environmental,'']);
+      R1(['Appraisal / Market Study', memo.appraisalStudy,'']);
+      R1(['Loan Origination / Closing', memo.loanOrigination,'']);
+      R1(['Construction Interest', memo.constructionInterest,'']);
+      R1(['Operating Reserve', memo.operatingReserve,'']);
+      R1(['Replacement Reserve', memo.replacementReserve,'']);
+      R1(['Contingency', memo.contingency,'']);
+      R1(['Developer Fee', memo.developerFee,'']);
+    } else {
+      R1(['Acquisition / Land', memo.acquisitionCost,'']);
+      R1(['Hard Costs', memo.hardCosts,'']);
+      R1(['Soft Costs', memo.softCosts,'']);
+      R1(['Financing Costs', memo.financingCosts,'']);
+      R1(['Contingency', memo.contingency,'']);
+    }
     const u1 = s1d.length;
-    R1(['Total Uses', null]);
+    R1(['Total Development Cost', null,'']);
     const uTotR = s1d.length;
     R1([]);
-    // Sources
-    R1(['SOURCES OF FUNDS','Amount']);
+    // Expanded Sources with terms
+    R1(['SOURCES OF FUNDS','Amount','Terms / Status']);
     const sr0 = s1d.length + 1;
-    R1(['Senior Debt', memo.seniorDebt]);
-    if (hasMezz) R1(['Mezzanine Debt', memo.mezzDebt]);
-    if (memo.taxCreditEquity>0) R1(['Tax Credit Equity', memo.taxCreditEquity]);
-    if (memo.grantFunds>0) R1(['Grant Funds', memo.grantFunds]);
-    R1(['Owner / Sponsor Equity', memo.ownerEquity]);
+    R1(['Senior Debt'+(memo.seniorLender?' — '+memo.seniorLender:''), memo.seniorDebt, memo.seniorRate+'% / '+memo.seniorTerm+'yr / '+memo.seniorStatus]);
+    if (hasMezz) R1(['Mezzanine Debt'+(memo.mezzLender?' — '+memo.mezzLender:''), memo.mezzDebt, memo.mezzRate+'% IO / '+memo.mezzTerm+'yr / '+memo.mezzStatus]);
+    if (memo.taxCreditEquity>0) R1(['Tax Credit Equity'+(memo.tcProgram?' ('+memo.tcProgram.toUpperCase()+')':''), memo.taxCreditEquity, memo.tcStatus]);
+    if (memo.grantFunds>0) R1(['Grant Funds'+(memo.grantProgram?' ('+memo.grantProgram+')':''), memo.grantFunds, memo.grantStatus]);
+    R1(['Owner / Sponsor Equity', memo.ownerEquity, '']);
     const sr1 = s1d.length;
-    R1(['Total Sources', null]);
+    R1(['Total Sources', null, '']);
     const sTotR = s1d.length;
-    R1(['Funding Gap / (Surplus)', null]);
+    R1(['Funding Gap / (Surplus)', null, '']);
     const gapR = s1d.length;
     R1([]);
-    // Key Metrics (formula-driven from this sheet)
-    R1(['KEY METRICS']);
-    R1(['NOI (from Pro Forma)', noi]);
+    // Expanded Key Metrics
+    R1(['KEY METRICS','','']);
+    R1(['NOI (from Pro Forma)', noi,'']);
     const noiMetricR = s1d.length;
-    R1(['Cap Rate', null]);
+    R1(['Cap Rate', null,'']);
     const capMetricR = s1d.length;
-    R1(['DSCR', dscr===Infinity?'N/A':dscr]);
+    R1(['DSCR', dscr===Infinity?'N/A':dscr,'']);
     const dscrMetricR = s1d.length;
-    R1(['Loan-to-Cost', null]);
+    R1(['Loan-to-Cost (LTC)', null,'']);
     const ltcMetricR = s1d.length;
+    if (memo.appraisedValue > 0) { R1(['Loan-to-Value (LTV)', null,'']); }
+    const ltvMetricR = memo.appraisedValue > 0 ? s1d.length : 0;
+    R1(['Debt Yield', null,'']);
+    const dyMetricR = s1d.length;
+    R1(['Breakeven Occupancy', null,'']);
+    const beoMetricR = s1d.length;
+    R1(['Cash Flow After Debt', cashFlow,'']);
+    const cfMetricR = s1d.length;
     R1([]);
     // Contact
-    R1(['CONTACT INFORMATION']);
-    if (memo.contactName) R1(['Name', memo.contactName+(memo.contactTitle?', '+memo.contactTitle:'')]);
-    if (memo.contactOrg) R1(['Organization', memo.contactOrg]);
-    if (memo.contactEmail) R1(['Email', memo.contactEmail]);
-    if (memo.contactPhone) R1(['Phone', memo.contactPhone]);
+    R1(['CONTACT INFORMATION','','']);
+    if (memo.contactName) R1(['Name', memo.contactName+(memo.contactTitle?', '+memo.contactTitle:''),'']);
+    if (memo.contactOrg) R1(['Organization', memo.contactOrg,'']);
+    if (memo.contactEmail) R1(['Email', memo.contactEmail,'']);
+    if (memo.contactPhone) R1(['Phone', memo.contactPhone,'']);
 
     const ws1 = XLSX.utils.aoa_to_sheet(s1d);
-    ws1['!cols'] = [{wch:30},{wch:24}];
-    // Inject formulas
+    ws1['!cols'] = [{wch:34},{wch:20},{wch:24}];
+    // Inject formulas for totals
     setCell(ws1,'B'+uTotR,{f:'SUM(B'+u0+':B'+u1+')'},money);
     setCell(ws1,'B'+sTotR,{f:'SUM(B'+sr0+':B'+sr1+')'},money);
     setCell(ws1,'B'+gapR,{f:'B'+uTotR+'-B'+sTotR},money);
+    // % of Total column for uses
+    for(let r=u0;r<=u1;r++) {
+      if(ws1['B'+r]) { ws1['B'+r].z=money; setCell(ws1,'C'+r,{f:'IF(B$'+uTotR+'=0,0,B'+r+'/B$'+uTotR+')'},pctFmt); }
+    }
+    // Inject metric formulas
     setCell(ws1,'B'+capMetricR,{f:'IF(B'+uTotR+'=0,0,B'+noiMetricR+'/B'+uTotR+')'},pctFmt);
     setCell(ws1,'B'+ltcMetricR,{f:'IF(B'+uTotR+'=0,0,B'+sr0+'/B'+uTotR+')'},pctFmt);
-    // Format money cells in Uses
-    for(let r=u0;r<=u1;r++) if(ws1['B'+r]) ws1['B'+r].z=money;
+    if (ltvMetricR > 0) setCell(ws1,'B'+ltvMetricR,{f:'IF('+memo.appraisedValue+'=0,0,B'+sr0+'/'+memo.appraisedValue+')'},pctFmt);
+    setCell(ws1,'B'+dyMetricR,{f:'IF(B'+sTotR+'=0,0,B'+noiMetricR+'/(B'+sr0+(hasMezz?'+B'+(sr0+1):'')+'))'},pctFmt);
+    setCell(ws1,'B'+beoMetricR,{f:'IF(B'+noiMetricR+'=0,0,1-B'+cfMetricR+'/(B'+noiMetricR+'+ABS(B'+cfMetricR+'-B'+noiMetricR+')))'},pctFmt);
     // Format money cells in Sources
     for(let r=sr0;r<=sr1;r++) if(ws1['B'+r]) ws1['B'+r].z=money;
-    // Format NOI & DSCR
     if(ws1['B'+noiMetricR]) ws1['B'+noiMetricR].z=money;
+    if(ws1['B'+cfMetricR]) ws1['B'+cfMetricR].z=money;
     if(ws1['B'+dscrMetricR] && typeof ws1['B'+dscrMetricR].v==='number') ws1['B'+dscrMetricR].z=dec2;
 
-    // ════════════════ SHEET 2: OPERATING PRO FORMA (FORMULA-DRIVEN) ════════════════
-    // Layout: Assumptions at top (editable inputs), Pro Forma below with formulas
+    // ════════════════ SHEET 2: OPERATING PRO FORMA (WITH RENT ROLL + EXPENSE DETAIL) ════════════════
     const ws2 = {};
-    ws2['!ref'] = 'A1:C40';
-    ws2['!cols'] = [{wch:34},{wch:20},{wch:20}];
+    ws2['!ref'] = 'A1:D80';
+    ws2['!cols'] = [{wch:34},{wch:20},{wch:20},{wch:16}];
     let r2 = 1;
 
-    // ── ASSUMPTIONS SECTION (editable blue inputs)
-    setCell(ws2,'A'+r2,'ASSUMPTIONS — EDIT THESE VALUES'); r2++;
-    setCell(ws2,'A'+r2,'(Change any value below and the pro forma recalculates)'); r2++;
+    // ── RENT ROLL
+    setCell(ws2,'A'+r2,'RENT ROLL'); setCell(ws2,'B'+r2,'SF'); setCell(ws2,'C'+r2,'Rent/SF/Yr'); setCell(ws2,'D'+r2,'Annual Rent'); r2++;
+    const rrStart = r2;
+    if (hasRentRollData) {
+      memo.rentRoll.forEach(t => {
+        if (t.sf > 0) {
+          setCell(ws2,'A'+r2, t.name || 'Tenant');
+          setCell(ws2,'B'+r2, t.sf, '#,##0');
+          setCell(ws2,'C'+r2, t.rentPerSF, '$#,##0.00');
+          setCell(ws2,'D'+r2, {f:'B'+r2+'*C'+r2}, money);
+          r2++;
+        }
+      });
+    } else {
+      setCell(ws2,'A'+r2,'All Units (total)'); setCell(ws2,'B'+r2, memo.totalSF||0, '#,##0'); setCell(ws2,'C'+r2, 0); setCell(ws2,'D'+r2, memo.grossRent*12, money); r2++;
+    }
+    const rrEnd = r2 - 1;
+    setCell(ws2,'A'+r2,'Gross Potential Rent'); setCell(ws2,'B'+r2,{f:'SUM(B'+rrStart+':B'+rrEnd+')'},'#,##0'); setCell(ws2,'D'+r2,{f:'SUM(D'+rrStart+':D'+rrEnd+')'},money);
+    const gprR = r2; r2++;
     r2++;
-    setCell(ws2,'A'+r2,'Monthly Rent (all units)'); setCell(ws2,'B'+r2,memo.grossRent,money);
-    const rentCell = 'B'+r2; r2++;
+
+    // ── VACANCY
     setCell(ws2,'A'+r2,'Vacancy Rate'); setCell(ws2,'B'+r2,memo.vacancyRate/100,pctFmt);
     const vacCell = 'B'+r2; r2++;
-    setCell(ws2,'A'+r2,'Monthly Operating Expenses'); setCell(ws2,'B'+r2,memo.monthlyOpex,money);
-    const opexCell = 'B'+r2; r2++;
-    r2++;
-    setCell(ws2,'A'+r2,'Senior Debt Amount'); setCell(ws2,'B'+r2,memo.seniorDebt,money);
-    const sdAmtCell = 'B'+r2; r2++;
-    setCell(ws2,'A'+r2,'Senior Interest Rate'); setCell(ws2,'B'+r2,memo.seniorRate/100,pctFmt);
-    const sdRateCell = 'B'+r2; r2++;
-    setCell(ws2,'A'+r2,'Senior Term (years)'); setCell(ws2,'B'+r2,memo.seniorTerm,'0');
-    const sdTermCell = 'B'+r2; r2++;
-    if (hasMezz) {
-      setCell(ws2,'A'+r2,'Mezzanine Debt Amount'); setCell(ws2,'B'+r2,memo.mezzDebt,money);
-      var mzAmtCell = 'B'+r2; r2++;
-      setCell(ws2,'A'+r2,'Mezzanine Rate (interest-only)'); setCell(ws2,'B'+r2,memo.mezzRate/100,pctFmt);
-      var mzRateCell = 'B'+r2; r2++;
-    }
-    if (memo.totalSF > 0) {
-      setCell(ws2,'A'+r2,'Total Square Footage'); setCell(ws2,'B'+r2,memo.totalSF,'#,##0');
-      r2++;
-    }
-    if (memo.units > 0) {
-      setCell(ws2,'A'+r2,'Residential Units'); setCell(ws2,'B'+r2,memo.units,'0');
-      r2++;
-    }
-
-    r2 += 2;
-    // ── PRO FORMA SECTION (all formulas)
-    setCell(ws2,'A'+r2,'OPERATING PRO FORMA — YEAR 1');
-    setCell(ws2,'B'+r2,'Annual'); setCell(ws2,'C'+r2,'Monthly'); r2++;
-    setCell(ws2,'A'+r2,memo.projectName||'Untitled Project'); r2++;
-    r2++;
-
-    // REVENUE
-    setCell(ws2,'A'+r2,'REVENUE'); r2++;
-    setCell(ws2,'A'+r2,'Gross Potential Rent');
-    setCell(ws2,'B'+r2,{f:rentCell+'*12'},money);
-    setCell(ws2,'C'+r2,{f:rentCell},money);
-    const gprR = r2; r2++;
-
-    setCell(ws2,'A'+r2,'Less: Vacancy');
-    setCell(ws2,'B'+r2,{f:'-B'+gprR+'*'+vacCell},money);
-    setCell(ws2,'C'+r2,{f:'-C'+gprR+'*'+vacCell},money);
+    setCell(ws2,'A'+r2,'Less: Vacancy Loss'); setCell(ws2,'D'+r2,{f:'-D'+gprR+'*'+vacCell},money);
     const vacR = r2; r2++;
-
-    setCell(ws2,'A'+r2,'Effective Gross Income');
-    setCell(ws2,'B'+r2,{f:'B'+gprR+'+B'+vacR},money);
-    setCell(ws2,'C'+r2,{f:'C'+gprR+'+C'+vacR},money);
+    setCell(ws2,'A'+r2,'Effective Gross Income (EGI)'); setCell(ws2,'D'+r2,{f:'D'+gprR+'+D'+vacR},money);
     const egiR = r2; r2++;
     r2++;
 
-    // EXPENSES
-    setCell(ws2,'A'+r2,'EXPENSES'); r2++;
-    setCell(ws2,'A'+r2,'Operating Expenses');
-    setCell(ws2,'B'+r2,{f:'-'+opexCell+'*12'},money);
-    setCell(ws2,'C'+r2,{f:'-'+opexCell},money);
-    const opexR = r2; r2++;
+    // ── EXPENSE DETAIL
+    setCell(ws2,'A'+r2,'OPERATING EXPENSES'); setCell(ws2,'B'+r2,'Monthly'); setCell(ws2,'D'+r2,'Annual'); r2++;
+    const expStart = r2;
+    if (hasExpenseDetail) {
+      const expLines = [
+        ['Real Estate Taxes', memo.expRealEstateTax],
+        ['Insurance', memo.expInsurance],
+        ['Maintenance & Repairs', memo.expMaintenance],
+        ['Utilities (Landlord)', memo.expUtilities],
+        ['Marketing / Leasing', memo.expMarketing],
+        ['Admin & Legal', memo.expAdmin],
+        ['Replacement Reserves', memo.expReserves],
+        ['Other', memo.expOther],
+      ];
+      expLines.forEach(([label, val]) => {
+        setCell(ws2,'A'+r2, label); setCell(ws2,'B'+r2, val, money); setCell(ws2,'D'+r2, {f:'B'+r2+'*12'}, money); r2++;
+      });
+      // Management fee as % of EGI
+      setCell(ws2,'A'+r2,'Management Fee ('+memo.expManagement+'% of EGI)'); setCell(ws2,'B'+r2,{f:'D'+r2+'/12'},money); setCell(ws2,'D'+r2,{f:'D'+egiR+'*'+memo.expManagement+'/100'},money);
+      r2++;
+    } else {
+      setCell(ws2,'A'+r2,'Total Operating Expenses'); setCell(ws2,'B'+r2, memo.monthlyOpex, money); setCell(ws2,'D'+r2, {f:'B'+r2+'*12'}, money); r2++;
+    }
+    const expEnd = r2 - 1;
+    setCell(ws2,'A'+r2,'Total Operating Expenses'); setCell(ws2,'D'+r2,{f:'SUM(D'+expStart+':D'+expEnd+')'},money);
+    const totExpR = r2; r2++;
+    setCell(ws2,'A'+r2,'Expense Ratio (% of EGI)'); setCell(ws2,'D'+r2,{f:'IF(D'+egiR+'=0,0,D'+totExpR+'/D'+egiR+')'},pctFmt);
+    r2++; r2++;
 
-    setCell(ws2,'A'+r2,'Net Operating Income (NOI)');
-    setCell(ws2,'B'+r2,{f:'B'+egiR+'+B'+opexR},money);
-    setCell(ws2,'C'+r2,{f:'C'+egiR+'+C'+opexR},money);
+    // ── NOI
+    setCell(ws2,'A'+r2,'NET OPERATING INCOME (NOI)'); setCell(ws2,'D'+r2,{f:'D'+egiR+'-D'+totExpR},money);
     const noiR = r2; r2++;
+    if (memo.totalSF > 0) { setCell(ws2,'A'+r2,'NOI Per SF'); setCell(ws2,'D'+r2,{f:'D'+noiR+'/'+memo.totalSF},'$#,##0.00'); r2++; }
     r2++;
 
-    // DEBT SERVICE
+    // ── DEBT SERVICE
     setCell(ws2,'A'+r2,'DEBT SERVICE'); r2++;
-    // Senior DS: =PMT(rate/12, term*12, -amount)*12  (annual)
-    setCell(ws2,'A'+r2,'Senior Debt Service');
-    setCell(ws2,'B'+r2,{f:'-IF('+sdAmtCell+'=0,0,PMT('+sdRateCell+'/12,'+sdTermCell+'*12,-'+sdAmtCell+'))*12'},money);
-    setCell(ws2,'C'+r2,{f:'B'+r2+'/12'},money);
+    setCell(ws2,'A'+r2,'Senior Debt Amount'); setCell(ws2,'D'+r2,memo.seniorDebt,money);
+    const sdAmtCell = 'D'+r2; r2++;
+    setCell(ws2,'A'+r2,'Senior Rate'); setCell(ws2,'D'+r2,memo.seniorRate/100,pctFmt);
+    const sdRateCell = 'D'+r2; r2++;
+    setCell(ws2,'A'+r2,'Senior Term (years)'); setCell(ws2,'D'+r2,memo.seniorTerm,'0');
+    const sdTermCell = 'D'+r2; r2++;
+    setCell(ws2,'A'+r2,'Senior Annual Debt Service'); setCell(ws2,'D'+r2,{f:'IF('+sdAmtCell+'=0,0,-PMT('+sdRateCell+'/12,'+sdTermCell+'*12,'+sdAmtCell+')*12)'},money);
     const senDsR = r2; r2++;
 
-    let totDsFormula = '-B'+senDsR;
-    let totDsMonthly = '-C'+senDsR;
+    let totDsFormula = 'D'+senDsR;
     if (hasMezz) {
-      setCell(ws2,'A'+r2,'Mezzanine Interest');
-      setCell(ws2,'B'+r2,{f:'-'+mzAmtCell+'*'+mzRateCell},money);
-      setCell(ws2,'C'+r2,{f:'B'+r2+'/12'},money);
-      const mzDsR = r2;
-      totDsFormula += '-B'+mzDsR;
-      totDsMonthly += '-C'+mzDsR;
+      setCell(ws2,'A'+r2,'Mezzanine Debt Amount'); setCell(ws2,'D'+r2,memo.mezzDebt,money);
+      var mzAmtCell = 'D'+r2; r2++;
+      setCell(ws2,'A'+r2,'Mezzanine Rate'); setCell(ws2,'D'+r2,memo.mezzRate/100,pctFmt);
+      var mzRateCell = 'D'+r2; r2++;
+      setCell(ws2,'A'+r2,'Mezzanine Annual Interest'); setCell(ws2,'D'+r2,{f:mzAmtCell+'*'+mzRateCell},money);
+      totDsFormula += '+D'+r2;
       r2++;
     }
-
-    setCell(ws2,'A'+r2,'Total Debt Service');
-    setCell(ws2,'B'+r2,{f:totDsFormula},money);
-    setCell(ws2,'C'+r2,{f:totDsMonthly},money);
+    setCell(ws2,'A'+r2,'Total Annual Debt Service'); setCell(ws2,'D'+r2,{f:totDsFormula},money);
     const totDsR = r2; r2++;
     r2++;
 
-    // CASH FLOW
-    setCell(ws2,'A'+r2,'CASH FLOW'); r2++;
-    setCell(ws2,'A'+r2,'Cash Flow After Debt Service');
-    setCell(ws2,'B'+r2,{f:'B'+noiR+'+B'+totDsR},money);
-    setCell(ws2,'C'+r2,{f:'C'+noiR+'+C'+totDsR},money);
-    r2 += 2;
-
-    // KEY RATIOS (formula-driven)
-    setCell(ws2,'A'+r2,'KEY RATIOS (auto-calculated)'); r2++;
-    setCell(ws2,'A'+r2,'Cap Rate');
-    setCell(ws2,'B'+r2,{f:'IF(\'Deal Summary\'!B'+uTotR+'=0,0,B'+noiR+'/\'Deal Summary\'!B'+uTotR+')'},pctFmt);
+    // ── CASH FLOW + RATIOS
+    setCell(ws2,'A'+r2,'CASH FLOW AFTER DEBT SERVICE'); setCell(ws2,'D'+r2,{f:'D'+noiR+'-D'+totDsR},money);
+    const cfR = r2; r2++;
     r2++;
-    setCell(ws2,'A'+r2,'DSCR');
-    setCell(ws2,'B'+r2,{f:'IF(B'+totDsR+'=0,0,B'+noiR+'/ABS(B'+totDsR+'))'},dec2);
-    r2++;
-    setCell(ws2,'A'+r2,'Cash-on-Cash Return');
-    setCell(ws2,'B'+r2,{f:'IF(\'Deal Summary\'!B'+sr1+'=0,0,(B'+noiR+'+B'+totDsR+')/\'Deal Summary\'!B'+sr1+')'},pctFmt);
-    r2++;
+    setCell(ws2,'A'+r2,'KEY RATIOS'); r2++;
+    setCell(ws2,'A'+r2,'DSCR'); setCell(ws2,'D'+r2,{f:'IF(D'+totDsR+'=0,0,D'+noiR+'/D'+totDsR+')'},dec2); r2++;
+    setCell(ws2,'A'+r2,'Cap Rate'); setCell(ws2,'D'+r2,{f:'IF(\'Deal Summary\'!B'+uTotR+'=0,0,D'+noiR+'/\'Deal Summary\'!B'+uTotR+')'},pctFmt); r2++;
+    setCell(ws2,'A'+r2,'Cash-on-Cash Return'); setCell(ws2,'D'+r2,{f:'IF(\'Deal Summary\'!B'+sr1+'=0,0,D'+cfR+'/\'Deal Summary\'!B'+sr1+')'},pctFmt); r2++;
+    setCell(ws2,'A'+r2,'Debt Yield'); setCell(ws2,'D'+r2,{f:'IF('+sdAmtCell+(hasMezz?'+'+mzAmtCell:'')+'>0,D'+noiR+'/('+sdAmtCell+(hasMezz?'+'+mzAmtCell:'')+'),0)'},pctFmt); r2++;
+    setCell(ws2,'A'+r2,'Breakeven Occupancy'); setCell(ws2,'D'+r2,{f:'IF(D'+gprR+'=0,0,(D'+totExpR+'+D'+totDsR+')/D'+gprR+')'},pctFmt); r2++;
 
-    // Update sheet ref
-    ws2['!ref'] = 'A1:C'+r2;
+    ws2['!ref'] = 'A1:D'+r2;
 
-    // ════════════════ SHEET 3: COMMUNITY IMPACT ════════════════
+    // ════════════════ SHEET 3: COMMUNITY IMPACT (EXPANDED) ════════════════
     const s3 = [];
     const R3 = (vals) => { s3.push(vals); };
     R3(['COMMUNITY IMPACT']);
     R3([memo.projectName || 'Untitled Project']);
     R3([]);
-    R3(['Jobs Created', memo.jobsCreated || 0]);
+    R3(['EMPLOYMENT IMPACT','']);
+    R3(['Permanent Jobs Created', memo.jobsCreated || 0]);
     R3(['Jobs Retained', memo.jobsRetained || 0]);
+    R3(['Construction Jobs (temporary)', memo.constructionJobs || 0]);
+    if (memo.avgWage) R3(['Average Wage', memo.avgWage]);
+    R3([]);
+    R3(['LOCAL HIRING & EQUITY','']);
+    R3(['Local Hire Target (%)', (memo.pctLocalHire||0)+'%']);
+    R3(['MBE/WBE Spend Target (%)', (memo.pctMBESpend||0)+'%']);
+    R3([]);
+    R3(['PROJECT METRICS','']);
     if (memo.totalSF > 0) R3(['Total Square Footage', memo.totalSF]);
     if (memo.units > 0) R3(['Residential Units', memo.units]);
     R3([]);
-    R3(['Community Impact Statement']);
-    R3([memo.communityImpact || '']);
+    if (memo.isLERTA || memo.preRenovationAssessment > 0) {
+      R3(['TAX BASE IMPACT','']);
+      R3(['Pre-Renovation Assessment', memo.preRenovationAssessment]);
+      R3(['Post-Renovation Assessment', memo.postRenovationAssessment]);
+      R3(['Incremental Tax Base', memo.postRenovationAssessment - memo.preRenovationAssessment]);
+      R3(['LERTA Abatement', memo.isLERTA ? 'YES — 10-year graduated' : 'No']);
+      R3([]);
+    }
+    R3(['COMMUNITY IMPACT NARRATIVE','']);
+    R3([memo.communityImpact || '(Enter narrative in Step 4 of Deal Memo wizard)']);
 
     const ws3 = XLSX.utils.aoa_to_sheet(s3);
-    ws3['!cols'] = [{wch:28},{wch:40}];
+    ws3['!cols'] = [{wch:30},{wch:40}];
 
-    // Add sheets
+    // ════════════════ SHEET 4: 5-YEAR PROJECTION (FORMULA-DRIVEN) ════════════════
+    // Reference the actual cell addresses from Sheet 2 (Operating Pro Forma)
+    const gprRef = 'D'+gprR;     // Gross Potential Rent row
+    const vacRef = vacCell;       // Vacancy rate cell
+    const expRef = 'D'+totExpR;   // Total expenses row
+    const dsRef = sdAmtCell;      // Senior debt amount
+    const drRef = sdRateCell;     // Senior debt rate
+    const dtRef = sdTermCell;     // Senior debt term
+
+    const ws4 = {};
+    ws4['!ref'] = 'A1:G30';
+    ws4['!cols'] = [{wch:30},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16}];
+    const sc4 = (ref,val,z) => setCell(ws4,ref,val,z);
+    sc4('A1','5-YEAR PRO FORMA PROJECTION');
+    sc4('A2','All formulas reference Operating Pro Forma assumptions');
+    sc4('A3','');
+    sc4('A4','GROWTH ASSUMPTIONS');
+    sc4('A5','Annual Rent Growth (%)'); sc4('B5', memo.expGrowthRate || 3);
+    sc4('A6','Annual Expense Growth (%)'); sc4('B6', memo.expGrowthRate || 3);
+    sc4('A7','');
+    const yr = ['B','C','D','E','F'];
+    yr.forEach((c,i) => sc4(c+'8','Year '+(i+1)));
+    sc4('A9','REVENUE');
+    sc4('A10','Gross Potential Rent');
+    yr.forEach((c,i) => {
+      if (i===0) sc4(c+'10',{f:'\'Operating Pro Forma\'!'+gprRef},money);
+      else sc4(c+'10',{f:''+yr[i-1]+'10*(1+B$5/100)'},money);
+    });
+    sc4('A11','Less: Vacancy');
+    yr.forEach((c) => sc4(c+'11',{f:'-'+c+'10*\'Operating Pro Forma\'!'+vacRef},money));
+    sc4('A12','Effective Gross Income');
+    yr.forEach((c) => sc4(c+'12',{f:c+'10+'+c+'11'},money));
+    sc4('A13','');
+    sc4('A14','EXPENSES');
+    sc4('A15','Operating Expenses');
+    yr.forEach((c,i) => {
+      if (i===0) sc4(c+'15',{f:'\'Operating Pro Forma\'!'+expRef},money);
+      else sc4(c+'15',{f:''+yr[i-1]+'15*(1+B$6/100)'},money);
+    });
+    sc4('A16','Net Operating Income (NOI)');
+    yr.forEach((c) => sc4(c+'16',{f:c+'12-'+c+'15'},money));
+    sc4('A17','');
+    sc4('A18','DEBT SERVICE');
+    sc4('A19','Senior Debt Service');
+    yr.forEach((c) => sc4(c+'19',{f:'IF(\'Operating Pro Forma\'!'+dsRef+'=0,0,PMT(\'Operating Pro Forma\'!'+drRef+'/12,\'Operating Pro Forma\'!'+dtRef+'*12,-\'Operating Pro Forma\'!'+dsRef+')*12)'},money));
+    if (hasMezz) {
+      sc4('A20','Mezzanine Interest');
+      yr.forEach((c) => sc4(c+'20',{f:'\'Operating Pro Forma\'!'+mzAmtCell+'*\'Operating Pro Forma\'!'+mzRateCell},money));
+      sc4('A21','Total Debt Service');
+      yr.forEach((c) => sc4(c+'21',{f:c+'19+'+c+'20'},money));
+      sc4('A22','');
+      sc4('A23','CASH FLOW');
+      sc4('A24','Cash Flow After Debt');
+      yr.forEach((c) => sc4(c+'24',{f:c+'16-'+c+'21'},money));
+      sc4('A25','DSCR');
+      yr.forEach((c) => sc4(c+'25',{f:'IF('+c+'21>0,'+c+'16/'+c+'21,0)'},dec2));
+      sc4('A26','');
+      sc4('A27','CUMULATIVE');
+      sc4('A28','Cumulative Cash Flow');
+      yr.forEach((c,i) => sc4(c+'28',{f:i===0?c+'24':''+yr[i-1]+'28+'+c+'24'},money));
+    } else {
+      sc4('A20','Total Debt Service');
+      yr.forEach((c) => sc4(c+'20',{f:c+'19'},money));
+      sc4('A21','');
+      sc4('A22','CASH FLOW');
+      sc4('A23','Cash Flow After Debt');
+      yr.forEach((c) => sc4(c+'23',{f:c+'16-'+c+'20'},money));
+      sc4('A24','DSCR');
+      yr.forEach((c) => sc4(c+'24',{f:'IF('+c+'20>0,'+c+'16/'+c+'20,0)'},dec2));
+      sc4('A25','');
+      sc4('A26','CUMULATIVE');
+      sc4('A27','Cumulative Cash Flow');
+      yr.forEach((c,i) => sc4(c+'27',{f:i===0?c+'23':''+yr[i-1]+'27+'+c+'23'},money));
+    }
+    ws4['!ref'] = 'A1:F30';
+
+    // ════════════════ SHEET 5: AMORTIZATION SCHEDULE (FORMULA-DRIVEN) ════════════════
+    const ws5 = {};
+    const maxMonths = Math.min(((memo.seniorTerm||25)*12), 360);
+    ws5['!ref'] = 'A1:F'+(maxMonths+5);
+    ws5['!cols'] = [{wch:10},{wch:18},{wch:16},{wch:16},{wch:18},{wch:18}];
+    const sc5 = (ref,val,z) => setCell(ws5,ref,val,z);
+    sc5('A1','SENIOR DEBT AMORTIZATION SCHEDULE');
+    sc5('A2','Loan: '+fmt(memo.seniorDebt)+' at '+(memo.seniorRate||0)+'% for '+(memo.seniorTerm||25)+' years');
+    sc5('A3','');
+    sc5('A4','Month'); sc5('B4','Payment'); sc5('C4','Principal'); sc5('D4','Interest'); sc5('E4','Balance'); sc5('F4','Cumul. Interest');
+    const amortR = 5;
+    sc5('A'+amortR, 1);
+    sc5('B'+amortR,{f:'IF(\'Operating Pro Forma\'!'+dsRef+'=0,0,-PMT(\'Operating Pro Forma\'!'+drRef+'/12,\'Operating Pro Forma\'!'+dtRef+'*12,\'Operating Pro Forma\'!'+dsRef+'))'},money);
+    sc5('D'+amortR,{f:'\'Operating Pro Forma\'!'+dsRef+'*\'Operating Pro Forma\'!'+drRef+'/12'},money);
+    sc5('C'+amortR,{f:'B'+amortR+'-D'+amortR},money);
+    sc5('E'+amortR,{f:'\'Operating Pro Forma\'!'+dsRef+'-C'+amortR},money);
+    sc5('F'+amortR,{f:'D'+amortR},money);
+    // Rows 6+ = Months 2 through maxMonths
+    const displayMonths = Math.min(maxMonths, 120); // show up to 10 years in the sheet
+    for (let m = 1; m < displayMonths; m++) {
+      const r = amortR + m;
+      const prev = r - 1;
+      sc5('A'+r, m+1);
+      sc5('B'+r,{f:'B$'+amortR},money);
+      sc5('D'+r,{f:'E'+prev+'*\'Operating Pro Forma\'!'+sdRateCell+'/12'},money);
+      sc5('C'+r,{f:'B'+r+'-D'+r},money);
+      sc5('E'+r,{f:'E'+prev+'-C'+r},money);
+      sc5('F'+r,{f:'F'+prev+'+D'+r},money);
+    }
+    // Summary row after last month
+    const sumR = amortR + displayMonths + 1;
+    sc5('A'+sumR,'SUMMARY');
+    sc5('A'+(sumR+1),'Total Interest Paid'); sc5('B'+(sumR+1),{f:'F'+(amortR+displayMonths-1)},money);
+    sc5('A'+(sumR+2),'Remaining Balance (Month '+displayMonths+')'); sc5('B'+(sumR+2),{f:'E'+(amortR+displayMonths-1)},money);
+    sc5('A'+(sumR+3),'Total Payments'); sc5('B'+(sumR+3),{f:'B'+amortR+'*'+displayMonths},money);
+    ws5['!ref'] = 'A1:F'+(sumR+4);
+
+    // Add all sheets
     XLSX.utils.book_append_sheet(wb, ws1, 'Deal Summary');
     XLSX.utils.book_append_sheet(wb, ws2, 'Operating Pro Forma');
+    XLSX.utils.book_append_sheet(wb, ws4, '5-Year Projection');
+    XLSX.utils.book_append_sheet(wb, ws5, 'Amortization');
     XLSX.utils.book_append_sheet(wb, ws3, 'Community Impact');
 
     XLSX.writeFile(wb, (memo.projectName||'deal-memo').replace(/[^a-zA-Z0-9]/g,'-').toLowerCase()+'-pro-forma.xlsx');
@@ -3191,26 +3729,82 @@ function DealMemoPage({setPage}) {
         {step === 2 && (
           <div className="memo-form">
             <div className="memo-section">
-              <div className="memo-section-title">Uses of Funds</div>
-              <NumInput label="Acquisition/Land Cost" value={memo.acquisitionCost} onChange={val=>set('acquisitionCost',val)}/>
-              <NumInput label="Hard Costs (Construction)" value={memo.hardCosts} onChange={val=>set('hardCosts',val)}/>
-              <NumInput label="Soft Costs (A&E, Legal)" value={memo.softCosts} onChange={val=>set('softCosts',val)}/>
-              <NumInput label="Financing Costs" value={memo.financingCosts} onChange={val=>set('financingCosts',val)} step={5000}/>
-              <NumInput label="Contingency" value={memo.contingency} onChange={val=>set('contingency',val)} step={5000}/>
-              <ResultRow label="Total Uses" value={fmt(totalUses)}/>
+              <div className="memo-section-title">Uses of Funds — Development Budget</div>
+              <div style={{fontSize:'0.72rem',color:'var(--text-muted)',marginBottom:'0.75rem'}}>Enter detailed line items below. Leave zeros for categories that don't apply.</div>
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'0.4rem'}}>Acquisition</div>
+              <NumInput label="Acquisition / Land" value={memo.acquisitionCost} onChange={val=>set('acquisitionCost',val)}/>
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.5rem',marginBottom:'0.4rem'}}>Hard Costs</div>
+              <NumInput label="Demolition / Abatement" value={memo.demolition} onChange={val=>set('demolition',val)} step={10000}/>
+              <NumInput label="Structural / Shell" value={memo.structural} onChange={val=>set('structural',val)} step={25000}/>
+              <NumInput label="Mechanical / Electrical / Plumbing" value={memo.mep} onChange={val=>set('mep',val)} step={25000}/>
+              <NumInput label="Interior Finishes" value={memo.finishes} onChange={val=>set('finishes',val)} step={10000}/>
+              <NumInput label="FF&E" value={memo.ffe} onChange={val=>set('ffe',val)} step={5000}/>
+              <NumInput label="Site Work" value={memo.siteWork} onChange={val=>set('siteWork',val)} step={10000}/>
+              {hardCostTotal > 0 && <ResultRow label="Hard Cost Subtotal" value={fmt(hardCostTotal)}/>}
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.5rem',marginBottom:'0.4rem'}}>Soft Costs</div>
+              <NumInput label="Architecture & Engineering" value={memo.archEng} onChange={val=>set('archEng',val)} step={5000}/>
+              <NumInput label="Legal & Accounting" value={memo.legalAcct} onChange={val=>set('legalAcct',val)} step={5000}/>
+              <NumInput label="Permits & Zoning" value={memo.permitsZoning} onChange={val=>set('permitsZoning',val)} step={2000}/>
+              <NumInput label="Environmental (Phase I/II)" value={memo.environmental} onChange={val=>set('environmental',val)} step={5000}/>
+              <NumInput label="Appraisal / Market Study" value={memo.appraisalStudy} onChange={val=>set('appraisalStudy',val)} step={2500}/>
+              {softCostTotal > 0 && <ResultRow label="Soft Cost Subtotal" value={fmt(softCostTotal)}/>}
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.5rem',marginBottom:'0.4rem'}}>Financing & Reserves</div>
+              <NumInput label="Loan Origination / Closing" value={memo.loanOrigination} onChange={val=>set('loanOrigination',val)} step={2500}/>
+              <NumInput label="Construction Interest" value={memo.constructionInterest} onChange={val=>set('constructionInterest',val)} step={5000}/>
+              <NumInput label="Operating Reserve" value={memo.operatingReserve} onChange={val=>set('operatingReserve',val)} step={5000}/>
+              <NumInput label="Replacement Reserve" value={memo.replacementReserve} onChange={val=>set('replacementReserve',val)} step={2500}/>
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.5rem',marginBottom:'0.4rem'}}>Contingency & Fee</div>
+              <NumInput label="Contingency" value={memo.contingency} onChange={val=>set('contingency',val)} step={5000} hint={hardCostTotal>0?'Currently '+(hardCostTotal>0?Math.round(memo.contingency/hardCostTotal*100):0)+'% of hard costs':''}/>
+              <NumInput label="Developer Fee" value={memo.developerFee} onChange={val=>set('developerFee',val)} step={5000}/>
+              <div style={{marginTop:'0.5rem',padding:'0.5rem 0.75rem',background:'rgba(196,168,50,0.08)',borderRadius:8,border:'1px solid rgba(196,168,50,0.2)'}}>
+                <ResultRow label="Total Development Cost" value={fmt(totalUses)}/>
+                {memo.totalSF > 0 && <ResultRow label="Cost Per SF" value={fmt(Math.round(totalUses/memo.totalSF))+'/SF'}/>}
+              </div>
             </div>
             <div className="memo-section">
               <div className="memo-section-title">Sources of Funds</div>
-              <NumInput label="Senior Debt" value={memo.seniorDebt} onChange={val=>set('seniorDebt',val)}/>
-              <NumInput label="Senior Rate" value={memo.seniorRate} onChange={val=>set('seniorRate',val)} prefix="" suffix="%" step={0.25}/>
-              <NumInput label="Senior Term" value={memo.seniorTerm} onChange={val=>set('seniorTerm',val)} prefix="" suffix="yrs" step={5}/>
-              <NumInput label="Mezzanine Debt" value={memo.mezzDebt} onChange={val=>set('mezzDebt',val)} step={50000}/>
-              {memo.mezzDebt > 0 && <NumInput label="Mezz Rate" value={memo.mezzRate} onChange={val=>set('mezzRate',val)} prefix="" suffix="%" step={0.5}/>}
-              <NumInput label="Tax Credit Equity" value={memo.taxCreditEquity} onChange={val=>set('taxCreditEquity',val)} step={50000}/>
+              <div style={{fontSize:'0.72rem',color:'var(--text-muted)',marginBottom:'0.75rem'}}>Include lender/investor names and commitment status for lender-ready packages.</div>
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'0.4rem'}}>Senior Debt</div>
+              <NumInput label="Amount" value={memo.seniorDebt} onChange={val=>set('seniorDebt',val)}/>
+              <div style={{display:'flex',gap:'0.5rem'}}>
+                <div style={{flex:1}}><NumInput label="Rate (%)" value={memo.seniorRate} onChange={val=>set('seniorRate',val)} prefix="" suffix="%" step={0.25}/></div>
+                <div style={{flex:1}}><NumInput label="Term (yrs)" value={memo.seniorTerm} onChange={val=>set('seniorTerm',val)} prefix="" suffix="yrs" step={5}/></div>
+              </div>
+              <div style={{display:'flex',gap:'0.5rem'}}>
+                <div className="input-group" style={{flex:1}}><label className="input-label" style={{fontSize:'0.7rem'}}>Lender Name</label><input className="input input-sm" value={memo.seniorLender} onChange={e=>set('seniorLender',e.target.value)} placeholder="e.g., First National Bank"/></div>
+                <div className="input-group" style={{width:120}}><label className="input-label" style={{fontSize:'0.7rem'}}>Status</label><select className="input input-sm" value={memo.seniorStatus} onChange={e=>set('seniorStatus',e.target.value)}><option value="proposed">Proposed</option><option value="term-sheet">Term Sheet</option><option value="committed">Committed</option><option value="closed">Closed</option></select></div>
+              </div>
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.75rem',marginBottom:'0.4rem'}}>Mezzanine / Subordinate Debt</div>
+              <NumInput label="Amount" value={memo.mezzDebt} onChange={val=>set('mezzDebt',val)} step={50000}/>
+              {memo.mezzDebt > 0 && <>
+                <div style={{display:'flex',gap:'0.5rem'}}>
+                  <div style={{flex:1}}><NumInput label="Rate (%)" value={memo.mezzRate} onChange={val=>set('mezzRate',val)} prefix="" suffix="%" step={0.5}/></div>
+                  <div style={{flex:1}}><NumInput label="Term (yrs)" value={memo.mezzTerm} onChange={val=>set('mezzTerm',val)} prefix="" suffix="yrs" step={1}/></div>
+                </div>
+                <div style={{display:'flex',gap:'0.5rem'}}>
+                  <div className="input-group" style={{flex:1}}><label className="input-label" style={{fontSize:'0.7rem'}}>Lender Name</label><input className="input input-sm" value={memo.mezzLender} onChange={e=>set('mezzLender',e.target.value)} placeholder="e.g., Reinvestment Fund"/></div>
+                  <div className="input-group" style={{width:120}}><label className="input-label" style={{fontSize:'0.7rem'}}>Status</label><select className="input input-sm" value={memo.mezzStatus} onChange={e=>set('mezzStatus',e.target.value)}><option value="proposed">Proposed</option><option value="term-sheet">Term Sheet</option><option value="committed">Committed</option><option value="closed">Closed</option></select></div>
+                </div>
+              </>}
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.75rem',marginBottom:'0.4rem'}}>Tax Credit Equity</div>
+              <NumInput label="Amount" value={memo.taxCreditEquity} onChange={val=>set('taxCreditEquity',val)} step={50000}/>
+              {memo.taxCreditEquity > 0 && <div style={{display:'flex',gap:'0.5rem'}}>
+                <div className="input-group" style={{flex:1}}><label className="input-label" style={{fontSize:'0.7rem'}}>Program</label><select className="input input-sm" value={memo.tcProgram} onChange={e=>set('tcProgram',e.target.value)}><option value="htc">Federal HTC (20%)</option><option value="pa-htc">PA HTC (25%)</option><option value="nmtc">NMTC</option><option value="lihtc-9">9% LIHTC</option><option value="lihtc-4">4% LIHTC</option></select></div>
+                <div className="input-group" style={{width:120}}><label className="input-label" style={{fontSize:'0.7rem'}}>Status</label><select className="input input-sm" value={memo.tcStatus} onChange={e=>set('tcStatus',e.target.value)}><option value="proposed">Proposed</option><option value="applied">Applied</option><option value="awarded">Awarded</option><option value="closed">Closed</option></select></div>
+              </div>}
+              <div style={{fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px',marginTop:'0.75rem',marginBottom:'0.4rem'}}>Grants & Equity</div>
               <NumInput label="Grant Funds" value={memo.grantFunds} onChange={val=>set('grantFunds',val)} step={50000}/>
+              {memo.grantFunds > 0 && <div style={{display:'flex',gap:'0.5rem'}}>
+                <div className="input-group" style={{flex:1}}><label className="input-label" style={{fontSize:'0.7rem'}}>Program</label><input className="input input-sm" value={memo.grantProgram} onChange={e=>set('grantProgram',e.target.value)} placeholder="e.g., RACP, CDBG, EDA"/></div>
+                <div className="input-group" style={{width:120}}><label className="input-label" style={{fontSize:'0.7rem'}}>Status</label><select className="input input-sm" value={memo.grantStatus} onChange={e=>set('grantStatus',e.target.value)}><option value="proposed">Proposed</option><option value="applied">Applied</option><option value="awarded">Awarded</option><option value="disbursed">Disbursed</option></select></div>
+              </div>}
               <NumInput label="Owner/Sponsor Equity" value={memo.ownerEquity} onChange={val=>set('ownerEquity',val)} step={25000}/>
-              <ResultRow label="Total Sources" value={fmt(totalSources)}/>
-              {gap !== 0 && <ResultRow label={gap>0?'Funding Gap':'Surplus'} value={fmt(Math.abs(gap))} className={gap>0?'result-bad':'result-good'}/>}
+              <NumInput label="Appraised Value (if known)" value={memo.appraisedValue} onChange={val=>set('appraisedValue',val)} step={25000} hint="For LTV calculation"/>
+              <div style={{marginTop:'0.5rem',padding:'0.5rem 0.75rem',background:'rgba(196,168,50,0.08)',borderRadius:8,border:'1px solid rgba(196,168,50,0.2)'}}>
+                <ResultRow label="Total Sources" value={fmt(totalSources)}/>
+                {gap !== 0 && <ResultRow label={gap>0?'Funding Gap':'Surplus'} value={fmt(Math.abs(gap))} className={gap>0?'result-bad':'result-good'}/>}
+                {gap === 0 && <ResultRow label="Balanced" value="Sources = Uses" className="result-good"/>}
+              </div>
             </div>
             <div style={{gridColumn:'1/-1',display:'flex',gap:'0.75rem'}}>
               <button className="btn-outline btn-sm" onClick={()=>setStep(1)}><Icon type="back" size={14}/> Back</button>
@@ -3220,23 +3814,69 @@ function DealMemoPage({setPage}) {
         )}
 
         {step === 3 && (
-          <div className="memo-section" style={{maxWidth:700,margin:'0 auto'}}>
-            <div className="memo-section-title"><Icon type="layers" size={16}/> Operating Pro Forma</div>
-            <NumInput label="Monthly Gross Rent" value={memo.grossRent} onChange={val=>set('grossRent',val)} step={500} hint="Total scheduled rent at full occupancy"/>
-            <NumInput label="Vacancy Rate" value={memo.vacancyRate} onChange={val=>set('vacancyRate',val)} prefix="" suffix="%" step={1}/>
-            <NumInput label="Monthly Operating Expenses" value={memo.monthlyOpex} onChange={val=>set('monthlyOpex',val)} step={250} hint="Taxes, insurance, maintenance, management"/>
-            <div style={{marginTop:'1rem'}}>
-              <div className="result-section-title">Year 1 Pro Forma</div>
+          <div style={{maxWidth:800,margin:'0 auto'}}>
+            <div className="memo-section" style={{marginBottom:'1.5rem'}}>
+              <div className="memo-section-title"><Icon type="layers" size={16}/> Rent Roll — Tenant Schedule</div>
+              <p style={{fontSize:'0.72rem',color:'var(--text-muted)',marginBottom:'0.75rem'}}>Add each tenant or unit separately. This feeds your gross potential rent calculation.</p>
+              {memo.rentRoll.map((t,i) => (
+                <div key={i} style={{display:'flex',gap:'0.4rem',alignItems:'flex-end',marginBottom:'0.5rem',padding:'0.5rem',background:'rgba(255,255,255,0.03)',borderRadius:8,border:'1px solid var(--border-light)'}}>
+                  <div className="input-group" style={{flex:2,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>Tenant / Unit</label><input className="input input-sm" value={t.name} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],name:e.target.value};setMemo({...memo,rentRoll:rr})}} placeholder="e.g., 1F Restaurant"/></div>
+                  <div className="input-group" style={{width:80,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>SF</label><input className="input input-sm" type="number" value={t.sf||''} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],sf:Number(e.target.value)||0};setMemo({...memo,rentRoll:rr})}}/></div>
+                  <div className="input-group" style={{width:80,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>Rent/SF/Yr</label><input className="input input-sm" type="number" step="0.5" value={t.rentPerSF||''} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],rentPerSF:Number(e.target.value)||0};setMemo({...memo,rentRoll:rr})}}/></div>
+                  <div className="input-group" style={{width:80,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>Lease Type</label><select className="input input-sm" value={t.leaseType} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],leaseType:e.target.value};setMemo({...memo,rentRoll:rr})}}><option value="NNN">NNN</option><option value="Gross">Gross</option><option value="Mod Gross">Mod Gross</option></select></div>
+                  <div className="input-group" style={{width:60,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>Term (yr)</label><input className="input input-sm" type="number" value={t.leaseTerm||''} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],leaseTerm:Number(e.target.value)||0};setMemo({...memo,rentRoll:rr})}}/></div>
+                  <div className="input-group" style={{width:80,marginBottom:0}}><label className="input-label" style={{fontSize:'0.65rem'}}>Status</label><select className="input input-sm" value={t.status} onChange={e=>{const rr=[...memo.rentRoll];rr[i]={...rr[i],status:e.target.value};setMemo({...memo,rentRoll:rr})}}><option value="vacant">Vacant</option><option value="loi">LOI</option><option value="leased">Leased</option></select></div>
+                  {memo.rentRoll.length > 1 && <button onClick={()=>{const rr=[...memo.rentRoll];rr.splice(i,1);setMemo({...memo,rentRoll:rr})}} style={{background:'rgba(220,38,38,0.1)',border:'1px solid rgba(220,38,38,0.3)',borderRadius:6,color:'#f87171',cursor:'pointer',padding:'4px 8px',fontSize:'0.75rem',marginBottom:0}}>×</button>}
+                </div>
+              ))}
+              <button onClick={()=>setMemo({...memo,rentRoll:[...memo.rentRoll,{name:'',sf:0,rentPerSF:0,leaseType:'NNN',leaseTerm:5,status:'vacant'}]})} style={{background:'rgba(196,168,50,0.1)',border:'1px solid rgba(196,168,50,0.3)',borderRadius:8,color:'var(--gold)',cursor:'pointer',padding:'6px 14px',fontSize:'0.78rem',fontWeight:600,width:'100%',marginTop:'0.25rem'}}>+ Add Tenant / Unit</button>
+              {hasRentRollData && <div style={{marginTop:'0.75rem',padding:'0.5rem 0.75rem',background:'rgba(22,163,74,0.06)',borderRadius:8,border:'1px solid rgba(22,163,74,0.15)'}}>
+                <ResultRow label="Total Leasable SF" value={memo.rentRoll.reduce((s,t)=>s+t.sf,0).toLocaleString()+' SF'}/>
+                <ResultRow label="Gross Potential Rent (Annual)" value={fmt(rentRollGrossAnnual)}/>
+                <ResultRow label="Avg Rent / SF" value={'$'+(memo.rentRoll.reduce((s,t)=>s+t.sf,0)>0?(rentRollGrossAnnual/memo.rentRoll.reduce((s,t)=>s+t.sf,0)).toFixed(2):'0')+'/SF/yr'}/>
+              </div>}
+              {!hasRentRollData && <div style={{marginTop:'0.5rem'}}>
+                <p style={{fontSize:'0.7rem',color:'var(--text-muted)'}}>Or enter total monthly rent:</p>
+                <NumInput label="Monthly Gross Rent (all units)" value={memo.grossRent} onChange={val=>set('grossRent',val)} step={500}/>
+              </div>}
+              <NumInput label="Vacancy Rate" value={memo.vacancyRate} onChange={val=>set('vacancyRate',val)} prefix="" suffix="%" step={1} hint="Erie avg: 8-12% commercial"/>
+            </div>
+            <div className="memo-section" style={{marginBottom:'1.5rem'}}>
+              <div className="memo-section-title"><Icon type="layers" size={16}/> Operating Expenses — Annual Detail</div>
+              <p style={{fontSize:'0.72rem',color:'var(--text-muted)',marginBottom:'0.75rem'}}>Enter monthly amounts for each expense category. Management fee is calculated as % of EGI.</p>
+              <NumInput label="Real Estate Taxes (monthly)" value={memo.expRealEstateTax} onChange={val=>set('expRealEstateTax',val)} step={100} hint={memo.isLERTA?'LERTA abatement active':''}/>
+              <NumInput label="Insurance (monthly)" value={memo.expInsurance} onChange={val=>set('expInsurance',val)} step={50}/>
+              <NumInput label="Management Fee (% of EGI)" value={memo.expManagement} onChange={val=>set('expManagement',val)} prefix="" suffix="%" step={1} hint="Imputed even if self-managed"/>
+              <NumInput label="Maintenance & Repairs (monthly)" value={memo.expMaintenance} onChange={val=>set('expMaintenance',val)} step={100}/>
+              <NumInput label="Utilities — Landlord Share (monthly)" value={memo.expUtilities} onChange={val=>set('expUtilities',val)} step={100}/>
+              <NumInput label="Marketing / Leasing (monthly)" value={memo.expMarketing} onChange={val=>set('expMarketing',val)} step={50}/>
+              <NumInput label="Admin & Legal (monthly)" value={memo.expAdmin} onChange={val=>set('expAdmin',val)} step={50}/>
+              <NumInput label="Replacement Reserves (monthly)" value={memo.expReserves} onChange={val=>set('expReserves',val)} step={50} hint="Min $0.25/SF/yr required by lenders"/>
+              <NumInput label="Other (monthly)" value={memo.expOther} onChange={val=>set('expOther',val)} step={50}/>
+              <NumInput label="Annual Expense Growth (%)" value={memo.expGrowthRate} onChange={val=>set('expGrowthRate',val)} prefix="" suffix="%" step={0.5}/>
+              {!hasExpenseDetail && <div style={{marginTop:'0.5rem'}}>
+                <p style={{fontSize:'0.7rem',color:'var(--text-muted)'}}>Or enter total monthly operating expenses:</p>
+                <NumInput label="Monthly Operating Expenses (total)" value={memo.monthlyOpex} onChange={val=>set('monthlyOpex',val)} step={250}/>
+              </div>}
+            </div>
+            <div className="memo-section">
+              <div className="result-section-title">Year 1 Pro Forma Summary</div>
               <ResultRow label="Gross Potential Rent" value={fmt(annualRent)}/>
               <ResultRow label={'Vacancy Loss ('+memo.vacancyRate+'%)'} value={fmt(annualRent - egi)}/>
               <ResultRow label="Effective Gross Income" value={fmt(egi)}/>
-              <ResultRow label="Operating Expenses" value={fmt(annualOpex)}/>
+              {hasExpenseDetail && <ResultRow label={'Management Fee ('+memo.expManagement+'%)'} value={fmt(mgmtFee)}/>}
+              <ResultRow label="Total Operating Expenses" value={fmt(annualOpex)}/>
+              {egi > 0 && <ResultRow label="Expense Ratio" value={fmtPct(annualOpex/egi*100)}/>}
               <ResultRow label="Net Operating Income" value={fmt(noi)} className={noi>0?'result-good':'result-bad'}/>
               <ResultRow label="Total Debt Service" value={fmt(totalDS)}/>
               <ResultRow label="Cash Flow After DS" value={fmt(cashFlow)} className={cashFlow>0?'result-good':'result-bad'}/>
+              <div className="result-section-title" style={{marginTop:'0.75rem'}}>Key Ratios</div>
               <ResultRow label="DSCR" value={dscr===Infinity?'N/A':dscr.toFixed(2)+'x'} className={dscr>=1.25?'result-good':dscr>=1?'result-warn':'result-bad'}/>
               <ResultRow label="Going-In Cap Rate" value={fmtPct(capRate)} className={capRate>6?'result-good':'result-warn'}/>
               <ResultRow label="Senior LTC" value={fmtPct(ltc)} className={ltc<=75?'result-good':'result-warn'}/>
+              {ltv > 0 && <ResultRow label="LTV" value={fmtPct(ltv)} className={ltv<=75?'result-good':'result-warn'}/>}
+              {debtYield > 0 && <ResultRow label="Debt Yield" value={fmtPct(debtYield)} className={debtYield>=8?'result-good':'result-warn'}/>}
+              {breakEvenOcc > 0 && <ResultRow label="Breakeven Occupancy" value={fmtPct(breakEvenOcc)} className={breakEvenOcc<=80?'result-good':breakEvenOcc<=85?'result-warn':'result-bad'}/>}
             </div>
             <div style={{display:'flex',gap:'0.75rem',marginTop:'1rem'}}>
               <button className="btn-outline btn-sm" onClick={()=>setStep(2)}><Icon type="back" size={14}/> Back</button>
@@ -3511,11 +4151,12 @@ const geocodeAddress = async (street, city, stateInput, zip) => {
 
 // ─── DEAL SCREENER ───────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
-  {id:'restaurant',label:'Restaurant',icon:'🍽️',defaults:{purchasePrice:350000,renovationBudget:250000,sqft:3000,monthlyRent:0,annualRevenue:900000,occupancyCostPct:8,buildOutPerSF:100,annualOpex:0,loanRate:7.25,loanTermYrs:25,loanLTV:75,vacancyPct:0,opexRatio:0,mgmtFeePct:0}},
-  {id:'retail',label:'Retail',icon:'🏪',defaults:{purchasePrice:400000,renovationBudget:120000,sqft:2500,monthlyRent:2500,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:45,annualOpex:18000,loanRate:7.0,loanTermYrs:25,loanLTV:75,vacancyPct:8,opexRatio:35,mgmtFeePct:5}},
-  {id:'office',label:'Office',icon:'🏢',defaults:{purchasePrice:500000,renovationBudget:150000,sqft:4000,monthlyRent:5000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:40,annualOpex:24000,loanRate:6.75,loanTermYrs:25,loanLTV:75,vacancyPct:12,opexRatio:40,mgmtFeePct:5}},
-  {id:'multifamily',label:'Multifamily',icon:'🏠',defaults:{purchasePrice:600000,renovationBudget:200000,sqft:6000,monthlyRent:6000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:35,annualOpex:30000,loanRate:6.5,loanTermYrs:30,loanLTV:75,vacancyPct:7,opexRatio:45,mgmtFeePct:6}},
-  {id:'mixeduse',label:'Mixed-Use',icon:'🏗️',defaults:{purchasePrice:750000,renovationBudget:350000,sqft:8000,monthlyRent:7000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:55,annualOpex:36000,loanRate:7.0,loanTermYrs:25,loanLTV:70,vacancyPct:10,opexRatio:38,mgmtFeePct:5}},
+  {id:'restaurant',label:'Restaurant',icon:'🍽️',defaults:{purchasePrice:350000,renovationBudget:250000,sqft:3000,monthlyRent:0,annualRevenue:900000,occupancyCostPct:8,buildOutPerSF:100,annualOpex:0,loanRate:7.25,loanTermYrs:25,loanLTV:75,vacancyPct:0,opexRatio:0,mgmtFeePct:0,isFoodHall:false,fhVendorCount:0,fhRoyaltyPct:0,fhAvgVendorRevenue:0,fhLandlordUtilities:0,fhLandlordInsurance:0,fhLandlordMaint:0,fhLandlordMgmt:0,fhLandlordMarketing:0}},
+  {id:'foodhall',label:'Food Hall',icon:'🍜',defaults:{purchasePrice:500000,renovationBudget:600000,sqft:5000,monthlyRent:0,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:120,annualOpex:0,loanRate:7.25,loanTermYrs:25,loanLTV:75,vacancyPct:0,opexRatio:0,mgmtFeePct:0,isFoodHall:true,fhVendorCount:6,fhRoyaltyPct:18,fhAvgVendorRevenue:250000,fhLandlordUtilities:3000,fhLandlordInsurance:1500,fhLandlordMaint:2000,fhLandlordMgmt:4000,fhLandlordMarketing:1500}},
+  {id:'retail',label:'Retail',icon:'🏪',defaults:{purchasePrice:400000,renovationBudget:120000,sqft:2500,monthlyRent:2500,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:45,annualOpex:18000,loanRate:7.0,loanTermYrs:25,loanLTV:75,vacancyPct:8,opexRatio:35,mgmtFeePct:5,isFoodHall:false,fhVendorCount:0,fhRoyaltyPct:0,fhAvgVendorRevenue:0,fhLandlordUtilities:0,fhLandlordInsurance:0,fhLandlordMaint:0,fhLandlordMgmt:0,fhLandlordMarketing:0}},
+  {id:'office',label:'Office',icon:'🏢',defaults:{purchasePrice:500000,renovationBudget:150000,sqft:4000,monthlyRent:5000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:40,annualOpex:24000,loanRate:6.75,loanTermYrs:25,loanLTV:75,vacancyPct:12,opexRatio:40,mgmtFeePct:5,isFoodHall:false,fhVendorCount:0,fhRoyaltyPct:0,fhAvgVendorRevenue:0,fhLandlordUtilities:0,fhLandlordInsurance:0,fhLandlordMaint:0,fhLandlordMgmt:0,fhLandlordMarketing:0}},
+  {id:'multifamily',label:'Multifamily',icon:'🏠',defaults:{purchasePrice:600000,renovationBudget:200000,sqft:6000,monthlyRent:6000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:35,annualOpex:30000,loanRate:6.5,loanTermYrs:30,loanLTV:75,vacancyPct:7,opexRatio:45,mgmtFeePct:6,isFoodHall:false,fhVendorCount:0,fhRoyaltyPct:0,fhAvgVendorRevenue:0,fhLandlordUtilities:0,fhLandlordInsurance:0,fhLandlordMaint:0,fhLandlordMgmt:0,fhLandlordMarketing:0}},
+  {id:'mixeduse',label:'Mixed-Use',icon:'🏗️',defaults:{purchasePrice:750000,renovationBudget:350000,sqft:8000,monthlyRent:7000,annualRevenue:0,occupancyCostPct:0,buildOutPerSF:55,annualOpex:36000,loanRate:7.0,loanTermYrs:25,loanLTV:70,vacancyPct:10,opexRatio:38,mgmtFeePct:5,isFoodHall:false,fhVendorCount:0,fhRoyaltyPct:0,fhAvgVendorRevenue:0,fhLandlordUtilities:0,fhLandlordInsurance:0,fhLandlordMaint:0,fhLandlordMgmt:0,fhLandlordMarketing:0}},
 ];
 
 const PRESETS = {
@@ -3523,6 +4164,11 @@ const PRESETS = {
     {label:'Quick-Service',purchasePrice:200000,renovationBudget:150000,sqft:1800,annualRevenue:600000,buildOutPerSF:80},
     {label:'Full-Service',purchasePrice:400000,renovationBudget:300000,sqft:3500,annualRevenue:1200000,buildOutPerSF:110},
     {label:'Fast Casual',purchasePrice:250000,renovationBudget:180000,sqft:2200,annualRevenue:750000,buildOutPerSF:85},
+  ],
+  foodhall: [
+    {label:'Small (4 vendors)',purchasePrice:400000,renovationBudget:400000,sqft:3500,fhVendorCount:4,fhAvgVendorRevenue:200000,fhRoyaltyPct:18,buildOutPerSF:115},
+    {label:'Medium (6 vendors)',purchasePrice:500000,renovationBudget:600000,sqft:5000,fhVendorCount:6,fhAvgVendorRevenue:250000,fhRoyaltyPct:18,buildOutPerSF:120},
+    {label:'Large (10 vendors)',purchasePrice:800000,renovationBudget:1000000,sqft:8000,fhVendorCount:10,fhAvgVendorRevenue:300000,fhRoyaltyPct:18,buildOutPerSF:125},
   ],
   retail: [
     {label:'Boutique',purchasePrice:250000,renovationBudget:60000,sqft:1200,monthlyRent:1500},
@@ -3563,6 +4209,7 @@ function DealScreenerPage({setPage}) {
   };
 
   const isRestaurant = propType === 'restaurant';
+  const isFoodHall = propType === 'foodhall';
 
   // ── Calculations ──
   const totalProjectCost = d.purchasePrice + d.renovationBudget;
@@ -3570,9 +4217,21 @@ function DealScreenerPage({setPage}) {
   const contingency = Math.round(d.renovationBudget * 0.08);
   const totalDevelopmentCost = totalProjectCost + softCosts + contingency;
 
+  // ── Food Hall calculations (18% royalty model) ──
+  const fhTotalVendorRevenue = isFoodHall ? (d.fhVendorCount * d.fhAvgVendorRevenue) : 0;
+  const fhRoyaltyIncome = isFoodHall ? (fhTotalVendorRevenue * d.fhRoyaltyPct / 100) : 0;
+  const fhLandlordExpenses = isFoodHall ? ((d.fhLandlordUtilities + d.fhLandlordInsurance + d.fhLandlordMaint + d.fhLandlordMgmt + d.fhLandlordMarketing) * 12) : 0;
+
   // Income — from the real estate investor/landlord perspective
   let annualGrossIncome, annualOpex, noi;
-  if (isRestaurant) {
+  if (isFoodHall) {
+    // Food Hall: landlord collects flat royalty on vendor gross sales
+    // Vendors cover: food, labor, their own insurance
+    // Landlord covers: space, utilities, building insurance, maintenance, management, marketing
+    annualGrossIncome = fhRoyaltyIncome;
+    annualOpex = fhLandlordExpenses;
+    noi = annualGrossIncome - annualOpex;
+  } else if (isRestaurant) {
     // Landlord's view: rent = occupancy cost the restaurant pays as a % of project cost
     const impliedAnnualRent = totalDevelopmentCost * (d.occupancyCostPct / 100);
     annualGrossIncome = impliedAnnualRent;
@@ -3649,6 +4308,21 @@ function DealScreenerPage({setPage}) {
     else if (d.annualRevenue > 0 && d.sqft > 0 && d.annualRevenue / d.sqft >= 300) { score += 5; flags.push({c:'green',t:'Strong revenue density (' + fmt(Math.round(d.annualRevenue/d.sqft)) + '/SF)'}); }
   }
 
+  // Food Hall-specific flags
+  if (isFoodHall) {
+    const fhRevenuePerSF = d.sqft > 0 ? fhTotalVendorRevenue / d.sqft : 0;
+    const fhExpenseRatio = fhRoyaltyIncome > 0 ? (fhLandlordExpenses / fhRoyaltyIncome * 100) : 0;
+    if (d.fhRoyaltyPct >= 15 && d.fhRoyaltyPct <= 22) { score += 5; flags.push({c:'green',t:'Royalty rate (' + d.fhRoyaltyPct + '%) in standard food hall range (15-22%)'}); }
+    else if (d.fhRoyaltyPct < 15) { score -= 5; flags.push({c:'yellow',t:'Royalty rate (' + d.fhRoyaltyPct + '%) below typical 15-22% — may not cover landlord costs'}); }
+    else { flags.push({c:'yellow',t:'Royalty rate (' + d.fhRoyaltyPct + '%) above 22% — may deter vendors'}); }
+    if (fhRevenuePerSF >= 300) { score += 5; flags.push({c:'green',t:'Strong vendor revenue density (' + fmt(Math.round(fhRevenuePerSF)) + '/SF)'}); }
+    else if (fhRevenuePerSF > 0 && fhRevenuePerSF < 200) { score -= 5; flags.push({c:'yellow',t:'Vendor revenue density (' + fmt(Math.round(fhRevenuePerSF)) + '/SF) is light — need stronger operators or more vendors'}); }
+    if (fhExpenseRatio > 70) { score -= 5; flags.push({c:'yellow',t:'Landlord expense ratio at ' + Math.round(fhExpenseRatio) + '% of royalty income — thin margin'}); }
+    else if (fhExpenseRatio > 0 && fhExpenseRatio <= 50) { score += 5; flags.push({c:'green',t:'Healthy landlord expense ratio (' + Math.round(fhExpenseRatio) + '% of royalty income)'}); }
+    if (d.fhVendorCount >= 4 && d.fhVendorCount <= 12) { flags.push({c:'green',t:d.fhVendorCount + ' vendors — good diversity for food hall concept'}); }
+    else if (d.fhVendorCount < 4) { score -= 5; flags.push({c:'yellow',t:'Only ' + d.fhVendorCount + ' vendors — food halls typically need 4+ for variety and foot traffic'}); }
+  }
+
   // Cost per SF check
   if (costPerSF > 0 && costPerSF > 250) { flags.push({c:'yellow',t:'Total cost at ' + fmt(Math.round(costPerSF)) + '/SF — high for Erie market. Verify scope.'}); }
   if (costPerSF > 0 && costPerSF > 350) { score -= 5; }
@@ -3691,15 +4365,22 @@ function DealScreenerPage({setPage}) {
         </div>
       </div>
       <div className="content">
-        {/* Property Type Selection */}
+        {/* Property Type Selection — Food Hall is nested under Restaurant */}
         <div className="screener-type-grid">
-          {PROPERTY_TYPES.map(pt => (
-            <div key={pt.id} className={`screener-type-btn${propType === pt.id ? ' active' : ''}`} onClick={() => setPropType(pt.id)}>
+          {PROPERTY_TYPES.filter(pt => pt.id !== 'foodhall').map(pt => (
+            <div key={pt.id} className={`screener-type-btn${propType === pt.id || (pt.id === 'restaurant' && propType === 'foodhall') ? ' active' : ''}`} onClick={() => setPropType(pt.id)}>
               <span className="screener-type-icon">{pt.icon}</span>
               {pt.label}
             </div>
           ))}
         </div>
+        {/* Restaurant sub-type selector */}
+        {(propType === 'restaurant' || propType === 'foodhall') && (
+          <div style={{display:'flex',gap:'0.5rem',marginBottom:'1rem',marginTop:'-0.5rem'}}>
+            <button className={`btn-preset${propType === 'restaurant' ? ' active' : ''}`} style={{flex:1,padding:'8px 12px',borderRadius:8,border: propType==='restaurant' ? '1.5px solid var(--gold)' : '1px solid var(--border)',background: propType==='restaurant' ? 'rgba(212,175,55,0.08)' : 'transparent',color: propType==='restaurant' ? 'var(--gold)' : 'var(--text-muted)',cursor:'pointer',fontSize:'0.8rem',fontWeight:600}} onClick={() => setPropType('restaurant')}>🍽️ Standard Restaurant</button>
+            <button className={`btn-preset${propType === 'foodhall' ? ' active' : ''}`} style={{flex:1,padding:'8px 12px',borderRadius:8,border: propType==='foodhall' ? '1.5px solid var(--gold)' : '1px solid var(--border)',background: propType==='foodhall' ? 'rgba(212,175,55,0.08)' : 'transparent',color: propType==='foodhall' ? 'var(--gold)' : 'var(--text-muted)',cursor:'pointer',fontSize:'0.8rem',fontWeight:600}} onClick={() => setPropType('foodhall')}>🍜 Food Hall (18% Royalty)</button>
+          </div>
+        )}
 
         {/* Presets */}
         {PRESETS[propType] && (
@@ -3727,8 +4408,36 @@ function DealScreenerPage({setPage}) {
             </div>
 
             <div className="screener-section">
-              <h3>{isRestaurant ? 'Revenue & Occupancy Cost' : 'Income'}</h3>
-              {isRestaurant ? (
+              <h3>{isFoodHall ? 'Food Hall — Vendor Revenue & Royalty' : isRestaurant ? 'Revenue & Occupancy Cost' : 'Income'}</h3>
+              {isFoodHall ? (
+                <div>
+                  <div className="screener-row">
+                    <NumInput label="Number of Vendors" value={d.fhVendorCount} onChange={v=>set('fhVendorCount',v)} prefix="" suffix=" vendors" step={1} hint="Food stalls / vendor bays"/>
+                    <NumInput label="Avg Vendor Annual Revenue" value={d.fhAvgVendorRevenue} onChange={v=>set('fhAvgVendorRevenue',v)} prefix="$" step={25000} hint="Gross sales per vendor per year"/>
+                  </div>
+                  <div className="screener-row" style={{marginTop:'0.5rem'}}>
+                    <NumInput label="Royalty Rate" value={d.fhRoyaltyPct} onChange={v=>set('fhRoyaltyPct',v)} suffix="%" step={0.5} hint="Flat % of vendor gross sales to landlord"/>
+                  </div>
+                  <div style={{marginTop:'0.75rem',padding:'0.6rem 0.75rem',background:'rgba(196,168,50,0.08)',borderRadius:8,border:'1px solid rgba(196,168,50,0.2)',fontSize:'0.78rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}><span style={{color:'var(--text-muted)'}}>Total Vendor Revenue</span><span style={{color:'var(--text)',fontWeight:600}}>{fmt(fhTotalVendorRevenue)}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}><span style={{color:'var(--text-muted)'}}>Royalty Income ({d.fhRoyaltyPct}%)</span><span style={{color:'var(--gold)',fontWeight:700}}>{fmt(fhRoyaltyIncome)}/yr</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text-muted)'}}>Monthly Royalty Income</span><span style={{color:'var(--text)',fontWeight:600}}>{fmt(Math.round(fhRoyaltyIncome/12))}/mo</span></div>
+                  </div>
+                  <div style={{marginTop:'0.75rem',fontSize:'0.7rem',fontWeight:600,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'0.5px'}}>Landlord Operating Expenses (monthly)</div>
+                  <p style={{fontSize:'0.68rem',color:'var(--text-muted)',marginBottom:'0.5rem'}}>Vendors cover their own food, labor, and liability insurance. Landlord covers the below.</p>
+                  <div className="screener-row">
+                    <NumInput label="Utilities" value={d.fhLandlordUtilities} onChange={v=>set('fhLandlordUtilities',v)} prefix="$" step={250} hint="Electric, gas, water for shared space"/>
+                    <NumInput label="Building Insurance" value={d.fhLandlordInsurance} onChange={v=>set('fhLandlordInsurance',v)} prefix="$" step={100}/>
+                  </div>
+                  <div className="screener-row" style={{marginTop:'0.5rem'}}>
+                    <NumInput label="Maintenance / Cleaning" value={d.fhLandlordMaint} onChange={v=>set('fhLandlordMaint',v)} prefix="$" step={250} hint="Common area, shared kitchen, restrooms"/>
+                    <NumInput label="Management / Staff" value={d.fhLandlordMgmt} onChange={v=>set('fhLandlordMgmt',v)} prefix="$" step={500} hint="Host, cashiers, coordinators"/>
+                  </div>
+                  <div className="screener-row" style={{marginTop:'0.5rem'}}>
+                    <NumInput label="Marketing" value={d.fhLandlordMarketing} onChange={v=>set('fhLandlordMarketing',v)} prefix="$" step={250} hint="Social media, events, signage"/>
+                  </div>
+                </div>
+              ) : isRestaurant ? (
                 <div className="screener-row">
                   <NumInput label="Annual Revenue" value={d.annualRevenue} onChange={v=>set('annualRevenue',v)} prefix="$" step={50000}/>
                   <NumInput label="Occupancy Cost %" value={d.occupancyCostPct} onChange={v=>set('occupancyCostPct',v)} suffix="%" step={0.5}/>
@@ -3811,13 +4520,31 @@ function DealScreenerPage({setPage}) {
                   <div className="metric-tile-label">Cost / SF<InfoTip label="Cost / SF"/></div>
                   <div className="metric-tile-value">{fmt(Math.round(costPerSF))}</div>
                 </div>
-                {!isRestaurant && (
+                {isFoodHall && (
+                  <div className="metric-tile">
+                    <div className="metric-tile-label">Royalty Income</div>
+                    <div className="metric-tile-value green">{fmt(fhRoyaltyIncome)}/yr</div>
+                  </div>
+                )}
+                {isFoodHall && (
+                  <div className="metric-tile">
+                    <div className="metric-tile-label">Landlord Expenses</div>
+                    <div className="metric-tile-value">{fmt(fhLandlordExpenses)}/yr</div>
+                  </div>
+                )}
+                {isFoodHall && d.sqft > 0 && (
+                  <div className="metric-tile">
+                    <div className="metric-tile-label">Vendor Rev / SF</div>
+                    <div className="metric-tile-value">{fmt(Math.round(fhTotalVendorRevenue / d.sqft))}/SF</div>
+                  </div>
+                )}
+                {!isRestaurant && !isFoodHall && (
                   <div className="metric-tile">
                     <div className="metric-tile-label">Rent / SF<InfoTip label="Rent / SF"/></div>
                     <div className="metric-tile-value">{fmt(Math.round(rentPerSF))}/SF</div>
                   </div>
                 )}
-                {!isRestaurant && breakEvenOccupancy > 0 && (
+                {!isRestaurant && !isFoodHall && breakEvenOccupancy > 0 && (
                   <div className="metric-tile">
                     <div className="metric-tile-label">Break-Even Occ.<InfoTip label="Break-Even Occ."/></div>
                     <div className={`metric-tile-value ${breakEvenOccupancy <= 75 ? 'green' : breakEvenOccupancy <= 85 ? 'yellow' : 'red'}`}>{breakEvenOccupancy.toFixed(0)}%</div>
@@ -3937,18 +4664,25 @@ const COACH_KB = [
   {keys:['help','what can you','how do','what do you know','topics','what should i ask'],title:'How I Can Help',text:"I'm the Keystone Stack AI Business Coach. I have deep knowledge of development finance, incentive programs, and deal structuring — especially in Erie, PA. Here's what I can help with:\n\nTools:\n• Deal Screener — Quick go/no-go evaluation for any property type\n• Deal Memo — Professional lender-ready deal package\n• 7 Simulators — Pro formas, capital stacks, sources & uses\n• Incentives — 17 programs with checklists\n\nIncentive Programs (17 programs):\n• Federal: HTC, NMTC, Opportunity Zones, LIHTC, SBA 504, EB-5, CDBG, EDA, EPA Brownfields\n• State (PA): LERTA, CRIZ, RACP, KOZ, Keystone Communities, NPP, PA First, PIDA\n\nFinancial Concepts:\n• Cap Rate, NOI, DSCR, IRR, Cash-on-Cash, LTV/LTC\n• Capital stacks, sources & uses, waterfall distributions\n• Pro forma modeling, vacancy, rent projections\n\nDeal Structuring:\n• Gap financing, incentive layering, construction budgeting\n• Lease structures, tenant recruitment, phased development\n\nTry asking: 'How do I layer HTC and NMTC?' or 'What's a good capital stack for a $5M rehab in Erie?' or 'Explain DSCR' or 'How does CRIZ work?'"}
 ];
 
+const AI_SYSTEM_PROMPT = `You are the Keystone Stack AI Business Coach — an expert advisor on real estate development finance, deal structuring, incentive programs, restaurant business planning, and capital stack construction. You are built into Keystone Stack, a deal structuring platform designed for economic development organizations, CDCs, small-market developers, and entrepreneurs.
+
+Your knowledge includes all 17 federal and PA state incentive programs (HTC, NMTC, OZ, LIHTC, SBA 504, EB-5, CDBG, EDA, EPA Brownfields, LERTA, CRIZ, RACP, KOZ, Keystone Communities, NPP, PA First, PIDA), financial concepts (Cap Rate, NOI, DSCR, IRR, waterfall distributions, tax credit syndication, gap financing), deal structuring (capital stacks, sources & uses, pro forma modeling), restaurant business planning (prime cost, food/labor/occupancy %, breakeven, PA liquor license ~$100K in Erie County), and Erie PA market context (EDDC, Erie Refocused, waterfront development, downtown ecosystem).
+
+Be direct and specific. Use real numbers and benchmarks. When users share deal data, analyze it against industry standards and flag issues. Suggest specific applicable programs. Keep responses focused and actionable.`;
+
 function AICoachPage() {
   const [messages, setMessages] = useState([
     {role:'ai', text:"Welcome to the AI Business Coach. I'm powered by Claude AI with deep knowledge of development finance, incentive programs, capital stacks, restaurant planning, and Erie's economic development landscape.\n\nAsk me anything — deal structuring, program eligibility, financial concepts, or paste in your numbers and I'll analyze them.\n\nWhat are you working on?"}
   ]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [apiKey, setApiKey] = useState(() => {
     try { return localStorage.getItem('ks_api_key') || ''; } catch(e) { return ''; }
   });
-  const [apiStatus, setApiStatus] = useState('unknown'); // unknown, ok, error, checking
+  const [showKey, setShowKey] = useState(false);
   const [backendAvailable, setBackendAvailable] = useState(null);
+  const [backendHasKey, setBackendHasKey] = useState(false);
   const chatEnd = useRef(null);
   useEffect(() => { chatEnd.current?.scrollIntoView({behavior:'smooth'}); }, [messages, isThinking]);
 
@@ -3960,7 +4694,7 @@ function AICoachPage() {
         const data = await resp.json();
         if (data.status === 'ok') {
           setBackendAvailable(true);
-          if (data.hasKey) setApiStatus('ok');
+          setBackendHasKey(!!data.hasKey);
         }
       } catch(e) {
         setBackendAvailable(false);
@@ -3972,11 +4706,58 @@ function AICoachPage() {
   const saveApiKey = (key) => {
     setApiKey(key);
     try { localStorage.setItem('ks_api_key', key); } catch(e) {}
-    if (key.startsWith('sk-ant-')) setApiStatus('ok');
-    else if (key === '') setApiStatus('unknown');
   };
 
-  const isAIEnabled = () => backendAvailable && (apiStatus === 'ok' || apiKey);
+  const clearApiKey = () => {
+    setApiKey('');
+    try { localStorage.removeItem('ks_api_key'); } catch(e) {}
+  };
+
+  const keyValid = apiKey && apiKey.startsWith('sk-ant-') && apiKey.length > 20;
+  const isAIEnabled = backendHasKey || keyValid;
+
+  // Build message array for API calls
+  const buildApiMessages = (userMsg, history) => {
+    const msgs = history
+      .filter(m => (m.role === 'user' || m.role === 'ai') && !m.isThinking)
+      .map(m => ({role: m.role === 'ai' ? 'assistant' : 'user', content: m.text}));
+    msgs.push({role: 'user', content: userMsg});
+    return msgs;
+  };
+
+  // Call via backend proxy (preferred)
+  const sendViaProxy = async (userMsg, history) => {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({messages: buildApiMessages(userMsg, history), apiKey: apiKey || undefined}),
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    return data.text;
+  };
+
+  // Call Claude API directly from browser (when no backend)
+  const sendDirect = async (userMsg, history) => {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: AI_SYSTEM_PROMPT,
+        messages: buildApiMessages(userMsg, history),
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message || 'Claude API error');
+    return data.content?.[0]?.text || 'No response received.';
+  };
 
   // Local KB fallback
   const findBestMatch = (query) => {
@@ -4011,101 +4792,121 @@ function AICoachPage() {
     return null;
   };
 
-  const sendToAI = async (userMsg, allMessages) => {
-    // Build conversation for Claude API
-    const apiMessages = allMessages
-      .filter(m => m.role === 'user' || (m.role === 'ai' && !m.isThinking))
-      .map(m => ({role: m.role === 'ai' ? 'assistant' : 'user', content: m.text}));
-    // Add current message
-    apiMessages.push({role: 'user', content: userMsg});
-
-    try {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({messages: apiMessages, apiKey: apiKey || undefined}),
-      });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
-      return data.text;
-    } catch(err) {
-      throw err;
-    }
-  };
-
   const send = async () => {
     if (!input.trim() || isThinking) return;
     const userMsg = input.trim();
+    const currentMessages = messages;
     setMessages(prev => [...prev, {role:'user', text: userMsg}]);
     setInput('');
 
-    if (isAIEnabled()) {
-      // Use Claude API
+    if (isAIEnabled) {
       setIsThinking(true);
       try {
-        const response = await sendToAI(userMsg, messages);
+        let response;
+        if (backendAvailable) {
+          response = await sendViaProxy(userMsg, currentMessages);
+        } else {
+          response = await sendDirect(userMsg, currentMessages);
+        }
         setMessages(prev => [...prev, {role:'ai', text: response}]);
       } catch(err) {
-        // Fall back to local KB on API error
-        console.warn('AI API error, falling back to local KB:', err.message);
+        console.warn('AI error, falling back to local KB:', err.message);
         const match = findBestMatch(userMsg);
         if (match) {
-          setMessages(prev => [...prev, {role:'ai', text: match.text + '\n\n⚠️ Note: AI engine temporarily unavailable. Showing local knowledge base result.'}]);
+          setMessages(prev => [...prev, {role:'ai', text: match.text + '\n\n⚠️ AI temporarily unavailable — showing local knowledge base result.'}]);
         } else {
-          setMessages(prev => [...prev, {role:'ai', text: '⚠️ AI engine error: ' + err.message + '\n\nThe local knowledge base didn\'t have a match either. Try asking about a specific incentive program (HTC, NMTC, CRIZ, etc.) or financial concept (cap rate, DSCR, NOI).'}]);
+          setMessages(prev => [...prev, {role:'ai', text: '⚠️ Error: ' + err.message + '\n\nCheck your API key in the connection panel above. The key should start with sk-ant- and have credits available at console.anthropic.com.'}]);
         }
       }
       setIsThinking(false);
     } else {
-      // Local KB only
       setTimeout(() => {
         const match = findBestMatch(userMsg);
         if (match) {
           setMessages(prev => [...prev, {role:'ai', text: match.text}]);
         } else {
-          setMessages(prev => [...prev, {role:'ai', text:"I don't have a specific answer for that in my local knowledge base.\n\n💡 To unlock full AI-powered responses, click the ⚙️ icon above and connect your Claude API key. With AI enabled, I can answer any development finance question, analyze your deal numbers, and provide custom guidance.\n\nFor now, try asking about a specific program:\n• HTC, NMTC, Opportunity Zones, LIHTC, LERTA, CRIZ, RACP\n• Cap rate, DSCR, NOI, IRR, capital stacks\n• Gap financing, incentive layering, deal structuring"}]);
+          setMessages(prev => [...prev, {role:'ai', text:"I don't have a specific answer for that in my local knowledge base.\n\n💡 Add your Claude API key using the \"Connect AI\" button above to unlock full AI-powered responses.\n\nFor now, try asking about a specific program:\n• HTC, NMTC, Opportunity Zones, LIHTC, LERTA, CRIZ, RACP\n• Cap rate, DSCR, NOI, IRR, capital stacks\n• Gap financing, incentive layering, deal structuring"}]);
         }
       }, 250);
     }
   };
 
+  // Status pill
+  const statusPill = () => {
+    if (backendHasKey) return {label:'AI Connected (Server)', color:'#22c55e', dot:'#16a34a'};
+    if (keyValid && backendAvailable) return {label:'AI Connected (Proxy)', color:'#22c55e', dot:'#16a34a'};
+    if (keyValid && backendAvailable === false) return {label:'AI Connected (Direct)', color:'#22c55e', dot:'#16a34a'};
+    if (backendAvailable === null) return {label:'Checking...', color:'#94a3b8', dot:'#64748b'};
+    return {label:'Local KB Only', color:'#f59e0b', dot:'#d97706'};
+  };
+  const pill = statusPill();
+
   return (
     <div>
       <div className="page-header">
-        <div className="page-header-inner" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div className="page-header-inner" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'0.75rem'}}>
           <div>
             <h1>AI Business Coach</h1>
-            <p>{isAIEnabled() ? 'Powered by Claude AI — ask anything about development finance, deal structuring, or incentive programs' : 'Local knowledge base active — connect API key for full AI'}</p>
+            <p>{isAIEnabled ? 'Powered by Claude AI — ask anything about deals, incentives, restaurants, or capital stacks' : 'Local knowledge base active — add your API key for full AI'}</p>
           </div>
-          <button className="nav-gear" onClick={() => setShowSettings(!showSettings)} title="AI Settings" style={{fontSize:'1.2rem'}}>⚙️</button>
+          <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'0.4rem',background:'rgba(255,255,255,0.08)',borderRadius:'20px',padding:'4px 12px 4px 8px'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:pill.dot,display:'inline-block',flexShrink:0}}></span>
+              <span style={{fontSize:'0.75rem',color:pill.color,fontWeight:600,letterSpacing:'0.3px'}}>{pill.label}</span>
+            </div>
+            <button onClick={() => setShowKeyPanel(p => !p)} style={{background: showKeyPanel ? 'var(--gold)' : 'rgba(255,255,255,0.1)', color: showKeyPanel ? '#0a0a0a' : 'var(--text)', border:'none', borderRadius:'8px', padding:'6px 14px', fontSize:'0.8rem', fontWeight:600, cursor:'pointer', transition:'all 0.2s'}}>
+              {isAIEnabled ? '🔑 API Key' : '⚡ Connect AI'}
+            </button>
+          </div>
         </div>
       </div>
       <div className="content">
-        {showSettings && (
+        {showKeyPanel && (
           <div className="settings-card" style={{marginBottom:'1.5rem'}}>
-            <h3>AI Engine Settings</h3>
-            <p>Connect your Claude API key to unlock full AI-powered responses. Without a key, the coach uses a local knowledge base with {COACH_KB.length} topics.</p>
-            {backendAvailable === false && (
-              <div className="settings-status settings-status-none" style={{marginBottom:'0.75rem'}}>
-                <span>⚠️</span>
-                <span>Backend server not detected. Start it with: <code style={{background:'rgba(255,255,255,0.1)',padding:'2px 6px',borderRadius:'4px',fontSize:'0.8rem'}}>ANTHROPIC_API_KEY=your-key node server.js</code></span>
-              </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
+              <h3 style={{margin:0}}>Claude API Key</h3>
+              <button onClick={() => setShowKeyPanel(false)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1.2rem',lineHeight:1}}>×</button>
+            </div>
+            <p style={{marginBottom:'1rem'}}>Enter your Anthropic API key to unlock full AI-powered responses. Your key is saved in your browser only and never shared with anyone. Get one at <strong style={{color:'var(--gold)'}}>console.anthropic.com</strong>.</p>
+            <div style={{display:'flex',gap:'0.5rem',marginBottom:'0.75rem'}}>
+              <input
+                className="input"
+                type={showKey ? 'text' : 'password'}
+                placeholder="sk-ant-api03-..."
+                value={apiKey}
+                onChange={e => saveApiKey(e.target.value)}
+                style={{fontFamily:'monospace',fontSize:'0.85rem',flex:1}}
+              />
+              <button onClick={() => setShowKey(p => !p)} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'8px',color:'var(--text-muted)',cursor:'pointer',padding:'0 12px',fontSize:'0.8rem',whiteSpace:'nowrap'}}>
+                {showKey ? 'Hide' : 'Show'}
+              </button>
+              {apiKey && (
+                <button onClick={clearApiKey} style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.3)',borderRadius:'8px',color:'#f87171',cursor:'pointer',padding:'0 12px',fontSize:'0.8rem',whiteSpace:'nowrap'}}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.6rem 0.75rem',borderRadius:'8px',background: keyValid ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)',border:`1px solid ${keyValid ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.08)'}`}}>
+              <span style={{fontSize:'1rem'}}>{keyValid ? '✅' : '○'}</span>
+              <span style={{fontSize:'0.82rem',color: keyValid ? '#86efac' : 'var(--text-muted)'}}>
+                {keyValid
+                  ? backendAvailable ? 'Key active — AI calls routed through local proxy server' : 'Key active — AI calls made directly from your browser'
+                  : 'Paste your key above (starts with sk-ant-) to activate full AI'}
+              </span>
+            </div>
+            {backendAvailable === false && keyValid && (
+              <p style={{fontSize:'0.75rem',color:'var(--text-muted)',marginTop:'0.5rem',lineHeight:1.5}}>ℹ️ Backend server not detected — connecting directly to Claude API from your browser. For production use, run the backend proxy for better security.</p>
             )}
-            {backendAvailable && (
-              <div>
-                <div className="settings-key-row">
-                  <input className="input" type="password" placeholder="sk-ant-api03-..." value={apiKey} onChange={e => saveApiKey(e.target.value)} style={{fontFamily:'monospace',fontSize:'0.85rem',letterSpacing:'0.5px'}}/>
-                </div>
-                <div className={'settings-status ' + (apiStatus === 'ok' ? 'settings-status-ok' : 'settings-status-none')} style={{marginTop:'0.75rem'}}>
-                  {apiStatus === 'ok' ? (
-                    <><span>✓</span><span>AI engine connected — full Claude-powered responses active</span></>
-                  ) : (
-                    <><span>○</span><span>Enter your Anthropic API key above, or set ANTHROPIC_API_KEY on the server</span></>
-                  )}
-                </div>
-                <p style={{fontSize:'0.78rem',color:'var(--text-muted)',marginTop:'0.75rem',lineHeight:'1.5'}}>Your key is stored locally in your browser and sent only to the backend proxy. It is never sent to any third party. You can get a key at <span style={{color:'var(--gold)'}}>console.anthropic.com</span>.</p>
-              </div>
-            )}
+          </div>
+        )}
+        {!isAIEnabled && !showKeyPanel && (
+          <div style={{display:'flex',alignItems:'center',gap:'0.75rem',padding:'0.75rem 1rem',borderRadius:'10px',background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.2)',marginBottom:'1.25rem',cursor:'pointer'}} onClick={() => setShowKeyPanel(true)}>
+            <span style={{fontSize:'1.1rem'}}>⚡</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:'0.85rem',fontWeight:600,color:'var(--gold)'}}>Connect your Claude API key for full AI responses</div>
+              <div style={{fontSize:'0.75rem',color:'var(--text-muted)',marginTop:'2px'}}>Currently using local knowledge base only. Click here to connect.</div>
+            </div>
+            <span style={{color:'var(--text-muted)',fontSize:'0.9rem'}}>→</span>
           </div>
         )}
         <div className="chat-container">
@@ -4130,7 +4931,7 @@ function AICoachPage() {
             <div ref={chatEnd}/>
           </div>
           <div className="chat-input-row">
-            <input className="input" placeholder={isAIEnabled() ? "Ask anything about deals, incentives, restaurant planning, capital stacks..." : "Ask about HTC, NMTC, CRIZ, cap rates, capital stacks..."} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={isThinking}/>
+            <input className="input" placeholder={isAIEnabled ? "Ask anything about deals, incentives, restaurant planning, capital stacks..." : "Ask about HTC, NMTC, CRIZ, cap rates, capital stacks..."} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={isThinking}/>
             <button className="btn-gold btn-sm" onClick={send} disabled={isThinking}><Icon type="send" size={16}/></button>
           </div>
         </div>
